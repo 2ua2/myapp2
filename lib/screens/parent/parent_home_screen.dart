@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'parent_profile_screen.dart';
 
 class ParentHomeScreen extends StatefulWidget {
   const ParentHomeScreen({super.key});
@@ -9,6 +10,7 @@ class ParentHomeScreen extends StatefulWidget {
 
 class _ParentHomeScreenState extends State<ParentHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  String _selectedChild = 'name';
 
   void _showLocationHistory() {
     showModalBottomSheet(
@@ -71,38 +73,10 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                     children: [
                       _buildLocationHistoryItem(
                         'Home',
-                        '123 Main Street, Springfield',
-                        '2 mins ago',
+                        ' null',
+                        ' unknown',
                         Icons.home,
                         const Color(0xFF4CAF50),
-                      ),
-                      _buildLocationHistoryItem(
-                        'School',
-                        'Greenwood Elementary, Oak Avenue',
-                        '3 hours ago',
-                        Icons.school,
-                        const Color(0xFF2196F3),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Park',
-                        'Central Park, Elm Street',
-                        '5 hours ago',
-                        Icons.park,
-                        const Color(0xFF4CAF50),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Friend\'s House',
-                        '456 Oak Road, Springfield',
-                        'Yesterday at 4:30 PM',
-                        Icons.person,
-                        const Color(0xFFFF9800),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Library',
-                        'City Library, Pine Street',
-                        'Yesterday at 2:00 PM',
-                        Icons.local_library,
-                        const Color(0xFF9C27B0),
                       ),
                     ],
                   ),
@@ -173,7 +147,14 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => print('Profile'),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ParentProfileScreen(),
+                          ),
+                        );
+                      },
                       child: Container(
                         width: 40,
                         height: 40,
@@ -286,9 +267,9 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
           DraggableScrollableSheet(
             initialChildSize: 0.33,
             minChildSize: 0.33,
-            maxChildSize: 0.67,
+            maxChildSize: 0.9,
             snap: true,
-            snapSizes: const [0.33, 0.67],
+            snapSizes: const [0.33, 0.9],
             builder: (context, scrollController) {
               return Container(
                 decoration: const BoxDecoration(
@@ -322,19 +303,82 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                       ),
                     ),
 
-                    // Child Profile (Expandable)
+                    // Child Profile Dropdown (Full)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        children: [
-                          // Basic Info
-                          Row(
+                      child: GestureDetector(
+                        onTap: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            builder: (context) => Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(24),
+                                  topRight: Radius.circular(24),
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(20),
+                                    child: const Text(
+                                      'Children',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF212121),
+                                      ),
+                                    ),
+                                  ),
+                                  ListTile(
+                                    leading: Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF2196F3),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(Icons.add, color: Colors.white, size: 28),
+                                    ),
+                                    title: const Text(
+                                      '+ Add Child',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF2196F3),
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      print('Add child');
+                                    },
+                                  ),
+                                  const SizedBox(height: 20),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2196F3).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF2196F3),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
                             children: [
                               Container(
                                 width: 60,
                                 height: 60,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF4CAF50),
+                                  color: const Color(0xFF2196F3),
                                   shape: BoxShape.circle,
                                   border: Border.all(color: Colors.white, width: 3),
                                 ),
@@ -345,64 +389,75 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'name',
-                                      style: TextStyle(
+                                    Text(
+                                      _selectedChild,
+                                      style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
                                         color: Color(0xFF212121),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.location_on, size: 16, color: Color(0xFF4CAF50)),
-                                        const SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            'null',
-                                            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                                          ),
-                                        ),
-                                      ],
+                                    Text(
+                                      'Tap to view children',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey[600],
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2196F3).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: IconButton(
-                                  icon: const Icon(Icons.message, color: Color(0xFF2196F3), size: 22),
-                                  onPressed: () => print('Message'),
-                                ),
+                              const Icon(
+                                Icons.edit,
+                                color: Color(0xFF2196F3),
+                                size: 22,
                               ),
                             ],
                           ),
+                        ),
+                      ),
+                    ),
 
-                          // Additional Info
-                          const SizedBox(height: 20),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF5F5F5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              children: [
-                                _buildInfoRow(Icons.cake, 'Age', 'xx'),
-                                const Divider(height: 24),
-                                _buildInfoRow(Icons.phone, 'Phone Number', 'xxx-xxxx'),
-                                const Divider(height: 24),
-                                _buildInfoRow(Icons.school, 'School', 'null'),
-                              ],
+                    const SizedBox(height: 16),
+
+                    // Location Info
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_on, size: 18, color: Color(0xFF4CAF50)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Current Location: Unknown',
+                              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                             ),
                           ),
                         ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Additional Info
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            _buildInfoRow(Icons.cake, 'Age', 'xx'),
+                            const Divider(height: 24),
+                            _buildInfoRow(Icons.phone, 'Phone Number', 'xxx-xxxx'),
+                            const Divider(height: 24),
+                            _buildInfoRow(Icons.school, 'School', 'null'),
+                          ],
+                        ),
                       ),
                     ),
 
@@ -474,7 +529,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                                 child: _buildSquareControl(
                                   icon: Icons.call,
                                   label: 'Call',
-                                  color: const Color(0xFF4CAF50),
+                                  color: const Color(0xFF2196F3),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -482,7 +537,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                                 child: _buildSquareControl(
                                   icon: Icons.notifications_active,
                                   label: 'Alarm',
-                                  color: const Color(0xFFFF9800),
+                                  color: const Color(0xFF2196F3),
                                 ),
                               ),
                             ],
@@ -490,7 +545,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                           const SizedBox(height: 12),
 
-                          // Row 3: Geofence + Location History
+                          // Row 3: Geofence + Message
                           Row(
                             children: [
                               Expanded(
@@ -502,37 +557,60 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: GestureDetector(
-                                  onTap: _showLocationHistory,
-                                  child: Container(
-                                    height: 90,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF9C27B0).withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: const Color(0xFF9C27B0),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    child: const Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.history, color: Color(0xFF9C27B0), size: 32),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          'History',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF9C27B0),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                child: _buildSquareControl(
+                                  icon: Icons.message,
+                                  label: 'Message',
+                                  color: const Color(0xFF2196F3),
                                 ),
                               ),
                             ],
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Row 4: Location History (Full Width)
+                          GestureDetector(
+                            onTap: _showLocationHistory,
+                            child: Container(
+                              height: 90,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF9C27B0).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFF9C27B0),
+                                  width: 2,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.history, color: Color(0xFF9C27B0), size: 32),
+                                  const SizedBox(width: 12),
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Location History',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF9C27B0),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'View past locations',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),

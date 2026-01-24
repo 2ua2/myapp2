@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'parent_signup_screen.dart';
 import '../parent/parent_authorizations_screen.dart';
+import 'forgot_password_screen.dart';
 
 class ParentLoginScreen extends StatefulWidget {
   const ParentLoginScreen({super.key});
@@ -124,7 +125,12 @@ class _ParentLoginScreenState extends State<ParentLoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    print('Forgot password pressed');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ForgotPasswordScreen(),
+                      ),
+                    );
                   },
                   child: const Text(
                     'Forgot password?',
