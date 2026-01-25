@@ -253,7 +253,6 @@ class _ParentSignUpScreenState extends State<ParentSignUpScreen> {
                   onPressed: () {
                     print('Google sign up pressed');
                   },
-                  icon: const Icon(Icons.g_mobiledata, size: 32),
                   label: const Text(
                     'Sign up with Google',
                     style: TextStyle(

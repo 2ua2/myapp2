@@ -135,7 +135,7 @@ class _ParentLoginScreenState extends State<ParentLoginScreen> {
                   child: const Text(
                     'Forgot password?',
                     style: TextStyle(
-                      color: Color(0xFF757575),
+                      color: Color(0xFF03A9F4),
                       fontSize: 14,
                       fontWeight: FontWeight.w300,
                     ),
@@ -240,7 +240,6 @@ class _ParentLoginScreenState extends State<ParentLoginScreen> {
                   onPressed: () {
                     print('Google sign in pressed');
                   },
-                  icon: const Icon(Icons.g_mobiledata, size: 32),
                   label: const Text(
                     'Continue with Google',
                     style: TextStyle(
