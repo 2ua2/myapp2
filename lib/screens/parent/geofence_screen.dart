@@ -121,7 +121,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                       child: TextField(
                         controller: _locationController,
                         decoration: InputDecoration(
-                          hintText: 'Coming soon',
+                          hintText: 'select location',
                           hintStyle: const TextStyle(
                             color: Color(0xFF9E9E9E),
                           ),
