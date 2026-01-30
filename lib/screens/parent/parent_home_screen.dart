@@ -3,6 +3,7 @@ import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
 import 'message_screen.dart';
 import 'geofence_screen.dart';
+import 'location_history_screen.dart';
 
 class ParentHomeScreen extends StatefulWidget {
   const ParentHomeScreen({super.key});
@@ -34,111 +35,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         }
       });
     });
-  }
-
-  void _showLocationHistory() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.9,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (context, scrollController) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(24),
-                topRight: Radius.circular(24),
-              ),
-            ),
-            child: Column(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(24),
-                      topRight: Radius.circular(24),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      const Text(
-                        'Location History',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF212121),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    controller: scrollController,
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      _buildLocationHistoryItem(
-                        'Home',
-                        '123 Main Street, Springfield',
-                        '2 mins ago',
-                        Icons.home,
-                        const Color(0xFF4CAF50),
-                      ),
-                      _buildLocationHistoryItem(
-                        'School',
-                        'Greenwood Elementary, Oak Avenue',
-                        '3 hours ago',
-                        Icons.school,
-                        const Color(0xFF2196F3),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Park',
-                        'Central Park, Elm Street',
-                        '5 hours ago',
-                        Icons.park,
-                        const Color(0xFF4CAF50),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Friend\'s House',
-                        '456 Oak Road, Springfield',
-                        'Yesterday at 4:30 PM',
-                        Icons.person,
-                        const Color(0xFFFF9800),
-                      ),
-                      _buildLocationHistoryItem(
-                        'Library',
-                        'City Library, Pine Street',
-                        'Yesterday at 2:00 PM',
-                        Icons.local_library,
-                        const Color(0xFF9C27B0),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
   }
 
   @override
@@ -435,7 +331,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                           _buildMapTypeOption(
                             icon: Icons.satellite_alt,
                             label: 'Satellite',
-                            isSelected: _selectedMapType == ' Satellite',
+                            isSelected: _selectedMapType == 'Satellite',
                           ),
                         ],
                       ),
@@ -484,7 +380,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                         ),
                       ),
 
-                      // Child Profile Dropdown (Full)
+                      // Child Profile Dropdown
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: GestureDetector(
@@ -660,7 +556,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                             ),
                             const SizedBox(height: 16),
 
-                            // Row 1: SOS (Circle - Center)
+                            // SOS
                             Center(
                               child: Container(
                                 width: 100,
@@ -703,7 +599,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                             const SizedBox(height: 16),
 
-                            // Row 2: Call + Alarm
+                            // Call + Alarm
                             Row(
                               children: [
                                 Expanded(
@@ -726,7 +622,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                             const SizedBox(height: 12),
 
-                            // Row 3: Geofence + Message
+                            // Geofence + Message
                             Row(
                               children: [
                                 Expanded(
@@ -807,9 +703,20 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                               ],
                             ),
 
-                            // Row 4: Location History (Full Width)
+                            const SizedBox(height: 12),
+
+                            // Location History
                             GestureDetector(
-                              onTap: _showLocationHistory,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => LocationHistoryScreen(
+                                      childName: _selectedChild,
+                                    ),
+                                  ),
+                                );
+                              },
                               child: Container(
                                 height: 90,
                                 decoration: BoxDecoration(
@@ -926,62 +833,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     );
   }
 
-  Widget _buildLocationHistoryItem(
-      String title,
-      String address,
-      String time,
-      IconData icon,
-      Color color,
-      ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE0E0E0)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF212121),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  address,
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF757575)),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            time,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF9E9E9E)),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMapTypeOption({
     required IconData icon,
     required String label,
@@ -1005,8 +856,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
             children: [
               Icon(
                 icon,
-                color: isSelected ? const Color(0xFF2196F3) : const Color(
-                    0xFF757575),
+                color: isSelected ? const Color(0xFF2196F3) : const Color(0xFF757575),
                 size: 20,
               ),
               const SizedBox(width: 12),
@@ -1015,8 +865,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? const Color(0xFF2196F3) : const Color(
-                      0xFF212121),
+                  color: isSelected ? const Color(0xFF2196F3) : const Color(0xFF212121),
                 ),
               ),
               if (isSelected) ...[
