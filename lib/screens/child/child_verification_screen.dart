@@ -75,7 +75,7 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.1),
+                  color: const Color(0xFF4CAF50).withValues(alpha:0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -134,10 +134,10 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 16,
-                    color: const Color(0xFF4CAF50).withOpacity(0.3),
+                    color: const Color(0xFF4CAF50).withValues(alpha:0.3),
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF4CAF50).withOpacity(0.05),
+                  fillColor: const Color(0xFF4CAF50).withValues(alpha:0.05),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(
@@ -239,7 +239,7 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
                   color: const Color(0xFFE3F2FD),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFF2196F3).withOpacity(0.3),
+                    color: const Color(0xFF2196F3).withValues(alpha:0.3),
                     width: 1,
                   ),
                 ),
@@ -268,7 +268,7 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
                             'Ask your parent to open the app and find the code in their settings',
                             style: TextStyle(
                               fontSize: 13,
-                              color: const Color(0xFF2196F3).withOpacity(0.8),
+                              color: const Color(0xFF2196F3).withValues(alpha:0.8),
                               height: 1.3,
                             ),
                           ),

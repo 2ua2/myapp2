@@ -96,7 +96,7 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withOpacity(0.1),
+                    color: const Color(0xFF4CAF50).withValues(alpha:0.1),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -300,8 +300,8 @@ class ChildPermissionCard extends StatelessWidget {
           boxShadow: [
             BoxShadow(
               color: isGranted
-                  ? color.withOpacity(0.1)
-                  : Colors.black.withOpacity(0.05),
+                  ? color.withValues(alpha:0.1)
+                  : Colors.black.withValues(alpha:0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -314,8 +314,8 @@ class ChildPermissionCard extends StatelessWidget {
               height: 56,
               decoration: BoxDecoration(
                 color: isGranted
-                    ? color.withOpacity(0.1)
-                    : const Color(0xFF4CAF50).withOpacity(0.05),
+                    ? color.withValues(alpha:0.1)
+                    : const Color(0xFF4CAF50).withValues(alpha:0.05),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -353,7 +353,7 @@ class ChildPermissionCard extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF44336).withOpacity(0.1),
+                            color: const Color(0xFFF44336).withValues(alpha:0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(

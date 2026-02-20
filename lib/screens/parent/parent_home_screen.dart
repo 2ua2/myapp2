@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
-import 'message_screen.dart';
-import 'geofence_screen.dart';
 import 'child_info_screen.dart';
 
 class ParentHomeScreen extends StatefulWidget {
@@ -15,6 +13,7 @@ class ParentHomeScreen extends StatefulWidget {
 class _ParentHomeScreenState extends State<ParentHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _selectedChild = 'Ahmed';
+  bool _hasNotifications = true;
   bool _showSearchResults = false;
   final FocusNode _searchFocusNode = FocusNode();
   bool _showMapTypeDropdown = false;
@@ -37,14 +36,14 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     super.dispose();
   }
 
-  void _onCallPressed() {
+  void _onLocatePressed() {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.phone, color: Colors.white),
+            const Icon(Icons.my_location, color: Colors.white),
             const SizedBox(width: 12),
-            Text('Calling $_selectedChild...'),
+            Text('Locating $_selectedChild on map...'),
           ],
         ),
         backgroundColor: const Color(0xFF2196F3),
@@ -55,48 +54,38 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     );
   }
 
-  void _onAlarmPressed() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.notifications_active, color: Colors.white),
-            SizedBox(width: 12),
-            Text('Alarm activated'),
-          ],
-        ),
-        backgroundColor: Color(0xFF2196F3),
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _onMessagePressed() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MessageScreen(childName: _selectedChild),
-      ),
-    );
-  }
-
   void _onChildPressed() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChildInfoScreen(
-          childName: _selectedChild,
-        ),
+        builder: (context) => ChildInfoScreen(childName: _selectedChild),
       ),
     );
   }
 
-  void _onGeofencePressed() {
+  void _onSetRoutePressed() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.directions, color: Colors.white),
+            const SizedBox(width: 12),
+            Text('Setting route to $_selectedChild...'),
+          ],
+        ),
+        backgroundColor: const Color(0xFF2196F3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _onNotificationPressed() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => GeofenceScreen(childName: _selectedChild),
+        builder: (context) => const NotificationScreen(),
       ),
     );
   }
@@ -154,7 +143,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                         color: Colors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -243,85 +232,42 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                           const SizedBox(width: 10),
 
-                          // Map Settings Dropdown - Right
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _showMapTypeDropdown = !_showMapTypeDropdown;
-                                  });
-                                },
-                                child: Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    color: _showMapTypeDropdown
-                                        ? const Color(0xFF2196F3)
-                                        : Colors.white,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFFE0E0E0),
-                                    ),
-                                  ),
-                                  child: Icon(
-                                    Icons.layers,
-                                    color: _showMapTypeDropdown
-                                        ? Colors.white
-                                        : const Color(0xFF2196F3),
-                                    size: 22,
-                                  ),
-                                ),
+                          // Notification Icon - Right
+                          GestureDetector(
+                            onTap: _onNotificationPressed,
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: const Color(0xFFE0E0E0)),
                               ),
-
-                              // Dropdown Menu
-                              if (_showMapTypeDropdown)
-                                Positioned(
-                                  top: 50,
-                                  right: 0,
-                                  child: Material(
-                                    elevation: 8,
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: Container(
-                                      width: 160,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.1),
-                                            blurRadius: 12,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          _buildMapTypeOption(
-                                            icon: Icons.map_outlined,
-                                            label: 'Standard',
-                                            isSelected: _selectedMapType == 'Standard',
-                                          ),
-                                          const Divider(height: 1, indent: 16, endIndent: 16),
-                                          _buildMapTypeOption(
-                                            icon: Icons.satellite_alt,
-                                            label: 'Satellite',
-                                            isSelected: _selectedMapType == 'Satellite',
-                                          ),
-                                          const Divider(height: 1, indent: 16, endIndent: 16),
-                                          _buildMapTypeOption(
-                                            icon: Icons.terrain,
-                                            label: 'Terrain',
-                                            isSelected: _selectedMapType == 'Terrain',
-                                          ),
-                                        ],
-                                      ),
+                              child: Stack(
+                                children: [
+                                  const Center(
+                                    child: Icon(
+                                      Icons.notifications,
+                                      color: Color(0xFF2196F3),
+                                      size: 22,
                                     ),
                                   ),
-                                ),
-                            ],
+                                  if (_hasNotifications)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        width: 10,
+                                        height: 10,
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFFF44336),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -337,7 +283,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
+                              color: Colors.black.withValues(alpha: 0.1),
                               blurRadius: 8,
                               offset: const Offset(0, 4),
                             ),
@@ -360,6 +306,88 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                 ),
               ),
             ),
+
+            // Map Layers Button - Top Right on Map
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 70,
+              right: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _showMapTypeDropdown = !_showMapTypeDropdown;
+                      });
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: _showMapTypeDropdown
+                            ? const Color(0xFF2196F3)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.layers,
+                        color: _showMapTypeDropdown
+                            ? Colors.white
+                            : const Color(0xFF757575),
+                        size: 24,
+                      ),
+                    ),
+                  ),
+
+                  // Dropdown Menu
+                  if (_showMapTypeDropdown)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildMapTypeOption(
+                            icon: Icons.map_outlined,
+                            label: 'Standard',
+                            isSelected: _selectedMapType == 'Standard',
+                          ),
+                          const Divider(height: 1, indent: 16, endIndent: 16),
+                          _buildMapTypeOption(
+                            icon: Icons.satellite_alt,
+                            label: 'Satellite',
+                            isSelected: _selectedMapType == 'Satellite',
+                          ),
+                          const Divider(height: 1, indent: 16, endIndent: 16),
+                          _buildMapTypeOption(
+                            icon: Icons.terrain,
+                            label: 'Terrain',
+                            isSelected: _selectedMapType == 'Terrain',
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
             // Bottom Navigation Bar
             Positioned(
               bottom: 0,
@@ -368,13 +396,13 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               child: SafeArea(
                 child: Container(
                   margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(50),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
+                        color: Colors.black.withValues(alpha: 0.15),
                         blurRadius: 20,
                         offset: const Offset(0, 8),
                       ),
@@ -383,25 +411,20 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
+                      // Locate
+                      _buildBottomNavItem(
+                        icon: Icons.my_location,
+                        onTap: _onLocatePressed,
+                      ),
                       // Child
                       _buildBottomNavItem(
                         icon: Icons.child_care,
                         onTap: _onChildPressed,
                       ),
-                      // Call
+                      // Set Route
                       _buildBottomNavItem(
-                        icon: Icons.phone,
-                        onTap: _onCallPressed,
-                      ),
-                      // Message
-                      _buildBottomNavItem(
-                        icon: Icons.message,
-                        onTap: _onMessagePressed,
-                      ),
-                      // Geofence
-                      _buildBottomNavItem(
-                        icon: Icons.location_on,
-                        onTap: _onGeofencePressed,
+                        icon: Icons.directions,
+                        onTap: _onSetRoutePressed,
                       ),
                     ],
                   ),
@@ -445,7 +468,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
           _selectedMapType = label;
           _showMapTypeDropdown = false;
         });
-        print('Map type changed to: $label');
       },
       borderRadius: BorderRadius.circular(16),
       child: Padding(

@@ -106,7 +106,7 @@ class _MessageScreenState extends State<MessageScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha:0.05),
                   blurRadius: 8,
                   offset: const Offset(0, -2),
                 ),
@@ -120,7 +120,7 @@ class _MessageScreenState extends State<MessageScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2196F3).withOpacity(0.1),
+                      color: const Color(0xFF2196F3).withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(
@@ -173,7 +173,7 @@ class _MessageScreenState extends State<MessageScreen> {
                     decoration: BoxDecoration(
                       color: _hasText
                           ? const Color(0xFF2196F3)
-                          : const Color(0xFF2196F3).withOpacity(0.3),
+                          : const Color(0xFF2196F3).withValues(alpha:0.3),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(

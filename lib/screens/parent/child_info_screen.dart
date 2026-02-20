@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'message_screen.dart';
 import 'location_history_screen.dart';
+import 'geofence_screen.dart';
 
 class ChildInfoScreen extends StatefulWidget {
   final String childName;
@@ -39,7 +40,6 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
-    print('Call tapped');
   }
 
   void _onMessagePressed() {
@@ -47,6 +47,17 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => MessageScreen(
+          childName: widget.childName,
+        ),
+      ),
+    );
+  }
+
+  void _onGeofencePressed() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GeofenceScreen(
           childName: widget.childName,
         ),
       ),
@@ -109,7 +120,7 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Child Profile Card
+                    // Child Profile Card - Horizontal Layout
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -121,25 +132,25 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF2196F3).withOpacity(0.3),
+                            color: const Color(0xFF2196F3).withValues(alpha: 0.3),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
                           ),
                         ],
                       ),
-                      child: Column(
+                      child: Row(
                         children: [
                           // Avatar
                           Container(
-                            width: 100,
-                            height: 100,
+                            width: 80,
+                            height: 80,
                             decoration: BoxDecoration(
                               color: Colors.white,
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 4),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: Colors.black.withValues(alpha: 0.1),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
@@ -147,52 +158,56 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                             ),
                             child: const Icon(
                               Icons.child_care,
-                              size: 50,
+                              size: 40,
                               color: Color(0xFF2196F3),
                             ),
                           ),
 
-                          const SizedBox(height: 16),
+                          const SizedBox(width: 16),
 
-                          // Name
-                          Text(
-                            widget.childName,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // Status
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          // Name and Status
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.greenAccent,
-                                    shape: BoxShape.circle,
+                                Text(
+                                  widget.childName,
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Active • $_lastSeen',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: const BoxDecoration(
+                                          color: Colors.greenAccent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Active • $_lastSeen',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
@@ -204,7 +219,7 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Information Section
+                    // Information Section Title
                     const Text(
                       'Information',
                       style: TextStyle(
@@ -216,33 +231,104 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Info Cards
-                    _buildInfoCard(
-                      icon: Icons.cake,
-                      label: 'Age',
-                      value: _age,
-                      color: const Color(0xFFFF9800),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _buildInfoCard(
-                      icon: Icons.phone,
-                      label: 'Phone Number',
-                      value: _phoneNumber,
-                      color: const Color(0xFF4CAF50),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    _buildInfoCard(
-                      icon: Icons.location_on,
-                      label: 'Current Location',
-                      value: _currentLocation,
-                      color: const Color(0xFFF44336),
+                    // All Info in One Box
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildInfoRow(
+                            icon: Icons.cake,
+                            label: 'Age',
+                            value: _age,
+                            color: const Color(0xFFFF9800),
+                          ),
+                          const Divider(height: 32, thickness: 1),
+                          _buildInfoRow(
+                            icon: Icons.phone,
+                            label: 'Phone Number',
+                            value: _phoneNumber,
+                            color: const Color(0xFF4CAF50),
+                          ),
+                          const Divider(height: 32, thickness: 1),
+                          _buildInfoRow(
+                            icon: Icons.location_on,
+                            label: 'Current Location',
+                            value: _currentLocation,
+                            color: const Color(0xFFF44336),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 24),
+
+                    // Geofence Button (Safe Zone)
+                    GestureDetector(
+                      onTap: _onGeofencePressed,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2196F3).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFF2196F3),
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2196F3).withValues(alpha: 0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.location_city,
+                                color: Color(0xFF2196F3),
+                                size: 26,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Safe Zones',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2196F3),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Set up geofence areas',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF757575),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(
+                              Icons.arrow_forward_ios,
+                              color: Color(0xFF2196F3),
+                              size: 18,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
 
                     // Location History Button
                     GestureDetector(
@@ -250,7 +336,7 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF9C27B0).withOpacity(0.1),
+                          color: const Color(0xFF9C27B0).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: const Color(0xFF9C27B0),
@@ -263,7 +349,7 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                               width: 50,
                               height: 50,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF9C27B0).withOpacity(0.2),
+                                color: const Color(0xFF9C27B0).withValues(alpha: 0.2),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -318,7 +404,7 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, -2),
                   ),
@@ -351,59 +437,52 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
     );
   }
 
-  Widget _buildInfoCard({
+  Widget _buildInfoRow({
     required IconData icon,
     required String label,
     required String value,
     required Color color,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
+    return Row(
+      children: [
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF757575),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF212121),
-                  ),
-                ),
-              ],
-            ),
+          child: Icon(
+            icon,
+            color: color,
+            size: 24,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF757575),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF212121),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

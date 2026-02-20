@@ -24,7 +24,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF2196F3).withOpacity(0.1),
+                color: const Color(0xFF2196F3).withValues(alpha:0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -264,7 +264,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
       child: Container(
         height: 90,
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color, width: 2),
         ),
@@ -328,7 +328,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50).withOpacity(0.1),
+                      color: const Color(0xFF4CAF50).withValues(alpha:0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: const Color(0xFF4CAF50),
@@ -469,7 +469,7 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFF44336).withOpacity(0.4),
+                              color: const Color(0xFFF44336).withValues(alpha:0.4),
                               blurRadius: 12,
                               offset: const Offset(0, 4),
                             ),
@@ -584,7 +584,7 @@ class _QuickMessageButton extends StatelessWidget {
           color: const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: const Color(0xFF2196F3).withOpacity(0.2),
+            color: const Color(0xFF2196F3).withValues(alpha:0.2),
             width: 1,
           ),
         ),
@@ -687,7 +687,7 @@ class _FamilyContactCard extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: const Color(0xFF4CAF50).withOpacity(0.1),
+              color: const Color(0xFF4CAF50).withValues(alpha:0.1),
               shape: BoxShape.circle,
               border: Border.all(color: const Color(0xFF4CAF50), width: 2),
             ),
