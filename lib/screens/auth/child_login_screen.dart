@@ -44,7 +44,7 @@ Container(
 width: 100,
 height: 100,
 decoration: BoxDecoration(
-color: const Color(0xFF4CAF50).withOpacity(0.1),
+color: const Color(0xFF4CAF50).withValues(alpha:0.1),
 shape: BoxShape.circle,
 ),
 child: const Icon(

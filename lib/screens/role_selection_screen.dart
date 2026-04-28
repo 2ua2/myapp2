@@ -100,7 +100,7 @@ class RoleButton extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF2196F3).withOpacity(0.1),
+              color: const Color(0xFF2196F3).withValues(alpha:0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -112,7 +112,7 @@ class RoleButton extends StatelessWidget {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xFF2196F3).withOpacity(0.1),
+                color: const Color(0xFF2196F3).withValues(alpha:0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(

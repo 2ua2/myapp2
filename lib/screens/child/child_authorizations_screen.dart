@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'child_home_screen.dart';
 
 class ChildAuthorizationsScreen extends StatefulWidget {
   const ChildAuthorizationsScreen({super.key});
@@ -42,17 +43,29 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
   }
 
   bool get _allPermissionsGranted {
-    return _locationGranted && _notificationGranted && _microphoneGranted && _flashlightGranted;
+    return _locationGranted &&
+        _notificationGranted &&
+        _microphoneGranted &&
+        _flashlightGranted;
   }
 
   void _continue() {
     if (_allPermissionsGranted) {
-      print('All permissions granted! Continue to child home...');
+      print('All permissions granted! Navigate to child home...');
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ChildHomeScreen(),
+        ),
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please grant all permissions to ensure your safety'),
           backgroundColor: Color(0xFFFF9800),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
         ),
       );
     }
@@ -78,17 +91,19 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
             children: [
               const SizedBox(height: 20),
 
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.security,
-                  size: 50,
-                  color: Color(0xFF4CAF50),
+              Center(
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50).withValues(alpha:0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.security,
+                    size: 50,
+                    color: Color(0xFF4CAF50),
+                  ),
                 ),
               ),
 
@@ -218,13 +233,23 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    elevation: _allPermissionsGranted ? 3 : 0,
                   ),
-                  child: const Text(
-                    'Continue',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (_allPermissionsGranted) ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward, size: 20),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -274,7 +299,9 @@ class ChildPermissionCard extends StatelessWidget {
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: isGranted
+                  ? color.withValues(alpha:0.1)
+                  : Colors.black.withValues(alpha:0.05),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -287,14 +314,14 @@ class ChildPermissionCard extends StatelessWidget {
               height: 56,
               decoration: BoxDecoration(
                 color: isGranted
-                    ? color.withOpacity(0.1)
-                    : const Color(0xFF4CAF50).withOpacity(0.1),
+                    ? color.withValues(alpha:0.1)
+                    : const Color(0xFF4CAF50).withValues(alpha:0.05),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 icon,
                 size: 28,
-                color: isGranted ? color : const Color(0xFF4CAF50),
+                color: isGranted ? color : const Color(0xFF9E9E9E),
               ),
             ),
 
@@ -309,10 +336,12 @@ class ChildPermissionCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF212121),
+                            color: isGranted
+                                ? const Color(0xFF212121)
+                                : const Color(0xFF757575),
                           ),
                         ),
                       ),
@@ -324,7 +353,7 @@ class ChildPermissionCard extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF44336).withOpacity(0.1),
+                            color: const Color(0xFFF44336).withValues(alpha:0.1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(

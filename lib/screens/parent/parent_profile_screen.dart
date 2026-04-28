@@ -54,7 +54,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                     border: Border.all(color: Colors.white, width: 4),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2196F3).withOpacity(0.3),
+                        color: const Color(0xFF2196F3).withValues(alpha:0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -99,7 +99,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha:0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -132,7 +132,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                   icon: Icons.location_on_outlined,
                   title: 'Location',
                   value: 'Unknown',
-                  onTap: () => print('Edit location'),
+                  onTap: () => print('Edit Location'),
                 ),
               ],
             ),
@@ -149,7 +149,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha:0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -217,7 +217,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha:0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -263,7 +263,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFF44336).withOpacity(0.3),
+                    color: const Color(0xFFF44336).withValues(alpha:0.3),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -329,7 +329,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withOpacity(0.1),
+          color: const Color(0xFF2196F3).withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
@@ -366,7 +366,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withOpacity(0.1),
+          color: const Color(0xFF2196F3).withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
@@ -380,7 +380,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         ),
       ),
       value: value,
-      activeColor: const Color(0xFF2196F3),
+      activeThumbColor: const Color(0xFF2196F3),
       onChanged: onChanged,
     );
   }
@@ -397,7 +397,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withOpacity(0.1),
+          color: const Color(0xFF2196F3).withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
