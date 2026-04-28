@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "707440341592",
+    "firebase_url": "https://child-safety-app-dbd4d-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "child-safety-app-dbd4d",
+    "storage_bucket": "child-safety-app-dbd4d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707440341592:android:40b561c194fa995b92502d",
+        "android_client_info": {
+          "package_name": "com.example.myapp2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "707440341592-38adoakqg5kbqvnija2435suhqq9rdui.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC7cmFMvhGdKx5qIPjzvWYgCgLcyeMk_nA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "707440341592-38adoakqg5kbqvnija2435suhqq9rdui.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "707440341592-v4d1sm1mqph2r9gbs68nbt8dim30mobh.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myapp2"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
