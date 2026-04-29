@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
 import 'child_info_screen.dart';
@@ -19,6 +20,15 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   bool _showMapTypeDropdown = false;
   String _selectedMapType = 'Standard';
 
+  // Google Maps
+  GoogleMapController? _mapController;
+  MapType _currentMapType = MapType.normal;
+
+  static const CameraPosition _defaultPosition = CameraPosition(
+    target: LatLng(33.3152, 44.3661),
+    zoom: 14,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -33,10 +43,18 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+  }
+
   void _onLocatePressed() {
+    _mapController?.animateCamera(
+      CameraUpdate.newCameraPosition(_defaultPosition),
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -90,6 +108,25 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     );
   }
 
+  void _changeMapType(String label) {
+    MapType newType;
+    switch (label) {
+      case 'Satellite':
+        newType = MapType.satellite;
+        break;
+      case 'Terrain':
+        newType = MapType.terrain;
+        break;
+      default:
+        newType = MapType.normal;
+    }
+    setState(() {
+      _selectedMapType = label;
+      _currentMapType = newType;
+      _showMapTypeDropdown = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -104,26 +141,15 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         },
         child: Stack(
           children: [
-            // Map Area
-            Container(
-              color: const Color(0xFFE0E0E0),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.map, size: 100, color: Colors.grey[400]),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Map View',
-                      style: TextStyle(
-                        fontSize: 24,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            // Google Map
+            GoogleMap(
+              onMapCreated: _onMapCreated,
+              initialCameraPosition: _defaultPosition,
+              mapType: _currentMapType,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              compassEnabled: true,
             ),
 
             // Top Bar
@@ -151,7 +177,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                       ),
                       child: Row(
                         children: [
-                          // Profile Icon - Left
                           GestureDetector(
                             onTap: () {
                               Navigator.push(
@@ -178,7 +203,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                           const SizedBox(width: 10),
 
-                          // Search Bar - Center
                           Expanded(
                             child: Container(
                               height: 42,
@@ -232,7 +256,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
                           const SizedBox(width: 10),
 
-                          // Notification Icon - Right
                           GestureDetector(
                             onTap: _onNotificationPressed,
                             child: Container(
@@ -273,7 +296,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                       ),
                     ),
 
-                    // Search Results Dropdown
                     if (_showSearchResults)
                       Container(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -307,7 +329,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               ),
             ),
 
-            // Map Layers Button - Top Right on Map
+            // Map Layers Button
             Positioned(
               top: MediaQuery.of(context).padding.top + 70,
               right: 16,
@@ -346,7 +368,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                     ),
                   ),
 
-                  // Dropdown Menu
                   if (_showMapTypeDropdown)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
@@ -411,17 +432,14 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      // Locate
                       _buildBottomNavItem(
                         icon: Icons.my_location,
                         onTap: _onLocatePressed,
                       ),
-                      // Child
                       _buildBottomNavItem(
                         icon: Icons.child_care,
                         onTap: _onChildPressed,
                       ),
-                      // Set Route
                       _buildBottomNavItem(
                         icon: Icons.directions,
                         onTap: _onSetRoutePressed,
@@ -463,12 +481,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     required bool isSelected,
   }) {
     return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedMapType = label;
-          _showMapTypeDropdown = false;
-        });
-      },
+      onTap: () => _changeMapType(label),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
