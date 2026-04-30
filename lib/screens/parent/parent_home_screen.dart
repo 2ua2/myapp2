@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
@@ -23,6 +24,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   // Google Maps
   GoogleMapController? _mapController;
   MapType _currentMapType = MapType.normal;
+  Set<Marker> _markers = {};
 
   static const CameraPosition _defaultPosition = CameraPosition(
     target: LatLng(33.3152, 44.3661),
@@ -49,12 +51,69 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
+    _goToCurrentLocation();
   }
 
-  void _onLocatePressed() {
+  // Fetches real GPS position, places a blue marker, and animates the camera.
+  // Falls back to _defaultPosition silently on any error.
+  Future<void> _goToCurrentLocation() async {
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _fallbackToDefault();
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _fallbackToDefault();
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        _fallbackToDefault();
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      final latLng = LatLng(position.latitude, position.longitude);
+
+      setState(() {
+        _markers = {
+          Marker(
+            markerId: const MarkerId('current_location'),
+            position: latLng,
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            infoWindow: const InfoWindow(title: 'Your Location'),
+          ),
+        };
+      });
+
+      await _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: latLng, zoom: 16),
+        ),
+      );
+    } catch (_) {
+      _fallbackToDefault();
+    }
+  }
+
+  void _fallbackToDefault() {
     _mapController?.animateCamera(
       CameraUpdate.newCameraPosition(_defaultPosition),
     );
+  }
+
+  void _onLocatePressed() {
+    _goToCurrentLocation();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -150,6 +209,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               compassEnabled: true,
+              markers: _markers,
             ),
 
             // Top Bar

@@ -1,0 +1,123 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/auth_service.dart';
+import '../models/user_model.dart';
+
+class AuthProvider extends ChangeNotifier {
+  final AuthService _authService = AuthService();
+
+  UserModel? _currentUser;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  UserModel? get currentUser => _currentUser;
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+  bool get isAuthenticated => _currentUser != null;
+  bool get isParent => _currentUser?.isParent ?? false;
+  bool get isChild => _currentUser?.isChild ?? false;
+
+  AuthProvider() {
+    _init();
+  }
+
+  void _init() {
+    _authService.authStateChanges.listen((User? user) async {
+      if (user != null) {
+        _currentUser = await _authService.getUserModel(user.uid);
+      } else {
+        _currentUser = null;
+      }
+      notifyListeners();
+    });
+  }
+
+  Future<bool> registerParent({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final user = await _authService.registerParent(
+        name: name,
+        email: email,
+        password: password,
+      );
+      _currentUser = user;
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> signIn({
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final user = await _authService.signIn(
+        email: email,
+        password: password,
+      );
+      _currentUser = user;
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<void> signOut() async {
+    _setLoading(true);
+    try {
+      await _authService.signOut();
+      _currentUser = null;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+    }
+    _setLoading(false);
+  }
+
+  Future<bool> sendPasswordResetEmail(String email) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _authService.sendPasswordResetEmail(email);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  void clearError() => _clearError();
+
+  void _setLoading(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
+
+  void _setError(String message) {
+    _errorMessage = message;
+    notifyListeners();
+  }
+
+  void _clearError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+}
