@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
 
@@ -9,16 +10,19 @@ class AuthProvider extends ChangeNotifier {
   UserModel? _currentUser;
   bool _isLoading = false;
   String? _errorMessage;
+  // Role cached from SharedPreferences for guest child sessions (no Firebase Auth)
+  String? _localRole;
 
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _currentUser != null;
-  bool get isParent => _currentUser?.isParent ?? false;
-  bool get isChild => _currentUser?.isChild ?? false;
+  bool get isAuthenticated => _currentUser != null || _localRole != null;
+  bool get isParent => _currentUser?.isParent ?? (_localRole == 'parent');
+  bool get isChild => _currentUser?.isChild ?? (_localRole == 'child');
 
   AuthProvider() {
     _init();
+    _loadLocalRole();
   }
 
   void _init() {
@@ -30,6 +34,37 @@ class AuthProvider extends ChangeNotifier {
       }
       notifyListeners();
     });
+  }
+
+  // Restore guest child session from SharedPreferences on app start
+  Future<void> _loadLocalRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    _localRole = prefs.getString('user_role');
+    notifyListeners();
+  }
+
+  Future<bool> signUpParent({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final user = await _authService.signUpParent(
+        name: name,
+        email: email,
+        password: password,
+      );
+      _currentUser = user;
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
   }
 
   Future<bool> registerParent({
@@ -83,6 +118,12 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _authService.signOut();
       _currentUser = null;
+      // Clear guest child session stored in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_role');
+      await prefs.remove('family_id');
+      await prefs.remove('child_id');
+      _localRole = null;
     } catch (e) {
       _setError(e.toString().replaceAll('Exception: ', ''));
     }
@@ -95,6 +136,37 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       await _authService.sendPasswordResetEmail(email);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> sendChildVerificationCode(String parentEmail) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _authService.sendChildVerificationCode(parentEmail);
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  Future<bool> verifyChildCode(String parentEmail, String code) async {
+    _setLoading(true);
+    _clearError();
+
+    try {
+      await _authService.verifyChildCode(parentEmail, code);
+      _localRole = 'child';
       _setLoading(false);
       return true;
     } catch (e) {

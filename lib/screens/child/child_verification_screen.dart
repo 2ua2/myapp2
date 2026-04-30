@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'child_authorizations_screen.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
+import 'child_home_screen.dart';
 
 class ChildVerificationScreen extends StatefulWidget {
-  const ChildVerificationScreen({super.key});
+  final String parentEmail;
+
+  const ChildVerificationScreen({super.key, required this.parentEmail});
 
   @override
   State<ChildVerificationScreen> createState() => _ChildVerificationScreenState();
@@ -12,6 +16,7 @@ class ChildVerificationScreen extends StatefulWidget {
 class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
   final TextEditingController _codeController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -29,24 +34,46 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
     super.dispose();
   }
 
-  void _verifyCode() {
-    if (_codeController.text.length == 6) {
-      // TODO: Verify code with backend
-      print('Code entered: ${_codeController.text}');
+  Future<void> _verifyCode() async {
+    // Guard against duplicate calls from onChanged auto-trigger and button tap
+    if (_isLoading) return;
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ChildAuthorizationsScreen(),
-        ),
-      );
-    } else {
+    if (_codeController.text.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a valid 6-digit code'),
           backgroundColor: Color(0xFFF44336),
         ),
       );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final success = await auth.verifyChildCode(
+        widget.parentEmail,
+        _codeController.text,
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ChildHomeScreen()),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                auth.errorMessage ?? 'Verification failed. Please try again.'),
+            backgroundColor: const Color(0xFFF44336),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -198,7 +225,7 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _codeController.text.length == 6
+                  onPressed: (_codeController.text.length == 6 && !_isLoading)
                       ? _verifyCode
                       : null,
                   style: ElevatedButton.styleFrom(
@@ -211,22 +238,31 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'Continue',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              'Continue',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (_codeController.text.length == 6) ...[
+                              const SizedBox(width: 8),
+                              const Icon(Icons.check_circle, size: 20),
+                            ],
+                          ],
                         ),
-                      ),
-                      if (_codeController.text.length == 6) ...[
-                        const SizedBox(width: 8),
-                        const Icon(Icons.check_circle, size: 20),
-                      ],
-                    ],
-                  ),
                 ),
               ),
 

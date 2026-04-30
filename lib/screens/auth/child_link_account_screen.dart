@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 import '../child/child_verification_screen.dart';
 
 class ChildLinkAccountScreen extends StatefulWidget {
@@ -12,6 +14,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _codeController = TextEditingController();
   bool _showCodeField = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -20,14 +23,42 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
     super.dispose();
   }
 
-  void _sendRequest() {
-    // Navigate directly without validation (no backend)
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChildVerificationScreen(),
-      ),
-    );
+  Future<void> _sendRequest() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the parent email address')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final success = await auth.sendChildVerificationCode(email);
+
+      if (!mounted) return;
+
+      if (success) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ChildVerificationScreen(parentEmail: email),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                auth.errorMessage ?? 'Failed to send code. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
 
@@ -112,7 +143,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _sendRequest,
+                  onPressed: _isLoading ? null : _sendRequest,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2196F3),
                     foregroundColor: Colors.white,
@@ -120,13 +151,22 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    'Send',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
+                          ),
+                        )
+                      : const Text(
+                          'Send',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
 
@@ -158,7 +198,9 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const ChildVerificationScreen(),
+                            builder: (context) => ChildVerificationScreen(
+                              parentEmail: _emailController.text.trim(),
+                            ),
                           ),
                         );
                       } else {
