@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
-import '../child/child_verification_screen.dart';
+import '../child/child_home_screen.dart';
 
 class ChildLinkAccountScreen extends StatefulWidget {
   const ChildLinkAccountScreen({super.key});
@@ -11,24 +11,31 @@ class ChildLinkAccountScreen extends StatefulWidget {
 }
 
 class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
   final TextEditingController _codeController = TextEditingController();
-  bool _showCodeField = false;
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _nameController.dispose();
     _codeController.dispose();
     super.dispose();
   }
 
-  Future<void> _sendRequest() async {
-    final email = _emailController.text.trim();
+  Future<void> _verify() async {
+    final name = _nameController.text.trim();
+    final code = _codeController.text.trim();
 
-    if (email.isEmpty) {
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the parent email address')),
+        const SnackBar(content: Text('Please enter your name')),
+      );
+      return;
+    }
+
+    if (code.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid 6-digit code')),
       );
       return;
     }
@@ -36,22 +43,20 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
     setState(() => _isLoading = true);
     try {
       final auth = context.read<AuthProvider>();
-      final success = await auth.sendChildVerificationCode(email);
+      final success = await auth.verifyLinkCode(code, name);
 
       if (!mounted) return;
 
       if (success) {
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (context) => ChildVerificationScreen(parentEmail: email),
-          ),
+          MaterialPageRoute(builder: (_) => const ChildHomeScreen()),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                auth.errorMessage ?? 'Failed to send code. Please try again.'),
+                auth.errorMessage ?? 'Verification failed. Please try again.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -61,9 +66,8 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
     }
   }
 
-
   void _scanQRCode() {
-    print('Scan QR Code pressed');
+    // TODO: implement QR scan
   }
 
   @override
@@ -90,7 +94,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
                 width: 100,
                 height: 100,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2196F3).withValues(alpha:0.1),
+                  color: const Color(0xFF2196F3).withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
@@ -115,7 +119,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
               const SizedBox(height: 8),
 
               const Text(
-                'Enter parent email or scan QR code',
+                'Enter your name and the 6-digit code from your parent',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
@@ -126,12 +130,29 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
               const SizedBox(height: 40),
 
               TextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
+                controller: _nameController,
+                keyboardType: TextInputType.name,
                 decoration: InputDecoration(
-                  labelText: 'Parent Email',
-                  hintText: 'Enter parent email address',
-                  prefixIcon: const Icon(Icons.email_outlined),
+                  labelText: 'Your Name',
+                  hintText: 'Enter your name',
+                  prefixIcon: const Icon(Icons.person_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              TextField(
+                controller: _codeController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: InputDecoration(
+                  labelText: 'Parent Code',
+                  hintText: 'Enter 6-digit code',
+                  prefixIcon: const Icon(Icons.pin_outlined),
+                  counterText: '',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -143,7 +164,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _sendRequest,
+                  onPressed: _isLoading ? null : _verify,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2196F3),
                     foregroundColor: Colors.white,
@@ -161,7 +182,7 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
                           ),
                         )
                       : const Text(
-                          'Send',
+                          'Continue',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w600,
@@ -169,66 +190,6 @@ class _ChildLinkAccountScreenState extends State<ChildLinkAccountScreen> {
                         ),
                 ),
               ),
-
-              if (_showCodeField) ...[
-                const SizedBox(height: 24),
-
-                TextField(
-                  controller: _codeController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  decoration: InputDecoration(
-                    labelText: 'Enter Code',
-                    hintText: 'Enter 6-digit code',
-                    prefixIcon: const Icon(Icons.pin_outlined),
-                    counterText: '',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                SizedBox(
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      if (_codeController.text.length == 6) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ChildVerificationScreen(
-                              parentEmail: _emailController.text.trim(),
-                            ),
-                          ),
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Please enter a valid 6-digit code'),
-                            backgroundColor: Color(0xFFF44336),
-                          ),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4CAF50),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Continue',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
 
               const SizedBox(height: 32),
 

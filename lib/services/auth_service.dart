@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/user_model.dart';
+import '../models/child_model.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -14,44 +15,6 @@ class AuthService {
 
   // Auth state stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
-
-  // Register parent with email and password
-  Future<UserModel?> registerParent({
-    required String name,
-    required String email,
-    required String password,
-  }) async {
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final user = credential.user;
-      if (user == null) return null;
-
-      await user.updateDisplayName(name);
-
-      final userModel = UserModel(
-        uid: user.uid,
-        name: name,
-        email: email,
-        role: 'parent',
-        createdAt: DateTime.now(),
-      );
-
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .set(userModel.toMap());
-
-      return userModel;
-    } on FirebaseAuthException catch (e) {
-      throw _handleAuthException(e);
-    } catch (e) {
-      throw Exception('Registration failed. Please try again.');
-    }
-  }
 
   // Register a new parent account and save their profile to Firestore.
   // familyId is set to the parent's own uid so children can later join it.
@@ -261,6 +224,99 @@ class AuthService {
           .delete();
 
       return familyId;
+    } on FirebaseException catch (e) {
+      throw Exception(e.message ?? 'Verification failed. Please try again.');
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Generates a 6-digit numeric link code and writes it to /link_codes/{code}.
+  // Must be called by a signed-in parent. The parent reads the code from the
+  // app and shares it verbally with the child. The code expires in 10 minutes
+  // and is marked used:false so verifyLinkCode can consume it exactly once.
+  Future<String> generateLinkCode() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('You must be signed in to generate a code.');
+    }
+
+    final code = (100000 + Random.secure().nextInt(900000)).toString();
+    final expiresAt = Timestamp.fromDate(
+      DateTime.now().add(const Duration(minutes: 10)),
+    );
+
+    await _firestore.collection('link_codes').doc(code).set({
+      'familyId': user.uid,
+      'parentName': user.displayName ?? '',
+      'createdAt': Timestamp.now(),
+      'expiresAt': expiresAt,
+      'used': false,
+    });
+
+    return code;
+  }
+
+  // Validates a link code entered by the child, registers the child under the
+  // parent's family in Firestore, and persists the child session in
+  // SharedPreferences so the app can restore it after a restart.
+  // Throws a readable Exception on any validation or Firestore failure.
+  Future<ChildModel> verifyLinkCode(String code, String childName) async {
+    try {
+      final doc = await _firestore.collection('link_codes').doc(code).get();
+
+      if (!doc.exists) {
+        throw Exception('Invalid code. Please check and try again.');
+      }
+
+      final data = doc.data()!;
+
+      if (data['used'] == true) {
+        throw Exception(
+            'This code has already been used. Ask your parent for a new one.');
+      }
+
+      final expiresAt = (data['expiresAt'] as Timestamp).toDate();
+      if (DateTime.now().isAfter(expiresAt)) {
+        throw Exception(
+            'This code has expired. Ask your parent for a new one.');
+      }
+
+      final familyId = data['familyId'] as String;
+      final parentName = data['parentName'] as String? ?? '';
+
+      // Mark the code used before writing the child document so a second
+      // device cannot consume the same code concurrently.
+      await _firestore
+          .collection('link_codes')
+          .doc(code)
+          .update({'used': true});
+
+      final childId = const Uuid().v4();
+      final child = ChildModel(
+        childId: childId,
+        familyId: familyId,
+        linkedAt: DateTime.now(),
+        isActive: true,
+      );
+
+      // Write ChildModel fields and childName so the parent can identify
+      // which child is linked (ChildModel itself has no name field).
+      await _firestore
+          .collection('families')
+          .doc(familyId)
+          .collection('children')
+          .doc(childId)
+          .set({...child.toMap(), 'childName': childName});
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_role', 'child');
+      await prefs.setString('child_id', childId);
+      await prefs.setString('family_id', familyId);
+      await prefs.setString('child_name', childName);
+      await prefs.setString('parent_name', parentName);
+
+      return child;
     } on FirebaseException catch (e) {
       throw Exception(e.message ?? 'Verification failed. Please try again.');
     } catch (e) {

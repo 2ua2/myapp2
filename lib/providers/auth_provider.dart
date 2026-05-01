@@ -67,30 +67,6 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> registerParent({
-    required String name,
-    required String email,
-    required String password,
-  }) async {
-    _setLoading(true);
-    _clearError();
-
-    try {
-      final user = await _authService.registerParent(
-        name: name,
-        email: email,
-        password: password,
-      );
-      _currentUser = user;
-      _setLoading(false);
-      return true;
-    } catch (e) {
-      _setError(e.toString().replaceAll('Exception: ', ''));
-      _setLoading(false);
-      return false;
-    }
-  }
-
   Future<bool> signIn({
     required String email,
     required String password,
@@ -166,6 +142,41 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       await _authService.verifyChildCode(parentEmail, code);
+      _localRole = 'child';
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  // Generates a 6-digit link code for the currently signed-in parent.
+  // Returns null if the parent is not signed in or if generation fails.
+  Future<String?> generateLinkCode() async {
+    if (_currentUser == null) {
+      _setError('You must be signed in to generate a code.');
+      return null;
+    }
+    _setLoading(true);
+    _clearError();
+    try {
+      final code = await _authService.generateLinkCode();
+      _setLoading(false);
+      return code;
+    } catch (e) {
+      _setError(e.toString().replaceAll('Exception: ', ''));
+      _setLoading(false);
+      return null;
+    }
+  }
+
+  Future<bool> verifyLinkCode(String code, String childName) async {
+    _setLoading(true);
+    _clearError();
+    try {
+      await _authService.verifyLinkCode(code, childName);
       _localRole = 'child';
       _setLoading(false);
       return true;

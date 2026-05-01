@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../providers/auth_provider.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -10,6 +12,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final TextEditingController _emailController = TextEditingController();
   bool _emailSent = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -17,20 +20,41 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  void _sendResetLink() {
-    if (_emailController.text.isNotEmpty) {
-      setState(() {
-        _emailSent = true;
-      });
-      print('Password reset link sent to: ${_emailController.text}');
-      // TODO: Implement actual password reset logic
-    } else {
+  Future<void> _sendResetLink() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter your email address'),
           backgroundColor: Color(0xFFF44336),
         ),
       );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final auth = context.read<AuthProvider>();
+      final success = await auth.sendPasswordResetEmail(email);
+
+      if (!mounted) return;
+
+      if (success) {
+        setState(() {
+          _emailSent = true;
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                auth.errorMessage ?? 'Failed to send reset email. Please try again.'),
+            backgroundColor: const Color(0xFFF44336),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -120,7 +144,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 SizedBox(
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: _sendResetLink,
+                    onPressed: _isLoading ? null : _sendResetLink,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2196F3),
                       foregroundColor: Colors.white,
@@ -157,11 +181,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                 // Resend Button
                 TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _emailSent = false;
-                    });
-                  },
+                  onPressed: _isLoading ? null : _sendResetLink,
                   child: const Text(
                     'Didn\'t receive the email? Resend',
                     style: TextStyle(
