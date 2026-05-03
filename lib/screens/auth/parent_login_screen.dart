@@ -6,7 +6,9 @@ import 'forgot_password_screen.dart';
 import '../../providers/auth_provider.dart';
 
 class ParentLoginScreen extends StatefulWidget {
-  const ParentLoginScreen({super.key});
+  final String? initialEmail;
+
+  const ParentLoginScreen({super.key, this.initialEmail});
 
   @override
   State<ParentLoginScreen> createState() => _ParentLoginScreenState();
@@ -51,6 +53,15 @@ class _ParentLoginScreenState extends State<ParentLoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-fill email when navigated from signup with a known address.
+    if (widget.initialEmail != null) {
+      _emailController.text = widget.initialEmail!;
     }
   }
 

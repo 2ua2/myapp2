@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 import 'role_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -78,7 +80,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // Clear any persisted parent Firebase session before routing.
+                      // Child SharedPreferences keys are intentionally left untouched.
+                      await Provider.of<AuthProvider>(context, listen: false)
+                          .silentSignOut();
+                      if (!mounted) return;
                       Navigator.pushReplacement(
                         context,
                         MaterialPageRoute(

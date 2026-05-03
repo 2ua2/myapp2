@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'child_home_screen.dart';
 
 class ChildAuthorizationsScreen extends StatefulWidget {
@@ -14,45 +15,121 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
   bool _microphoneGranted = false;
   bool _flashlightGranted = false;
 
-  void _requestLocationPermission() {
-    setState(() {
-      _locationGranted = !_locationGranted;
-    });
-    print('Location permission: $_locationGranted');
+  @override
+  void initState() {
+    super.initState();
+    _checkExistingPermissions();
   }
 
-  void _requestNotificationPermission() {
+  // Pre-fill booleans for permissions already granted in a prior session.
+  Future<void> _checkExistingPermissions() async {
+    // Location is considered granted only when background access is confirmed.
+    final locationAlways = await Permission.locationAlways.isGranted;
+    final notification = await Permission.notification.isGranted;
+    final microphone = await Permission.microphone.isGranted;
+    // FLASHLIGHT is a normal (install-time) permission on Android — no runtime
+    // dialog exists, so treat it as always available.
     setState(() {
-      _notificationGranted = !_notificationGranted;
+      _locationGranted = locationAlways;
+      _notificationGranted = notification;
+      _microphoneGranted = microphone;
+      _flashlightGranted = true;
     });
-    print('Notification permission: $_notificationGranted');
   }
 
-  void _requestMicrophonePermission() {
+  // Requests foreground location first, then escalates to background (always).
+  // Both must be granted before _locationGranted becomes true.
+  Future<void> _requestLocationPermission() async {
+    if (_locationGranted) return;
+
+    // Step 1: foreground location — Android requires this before background.
+    final whenInUse = await Permission.locationWhenInUse.request();
+    if (!whenInUse.isGranted) {
+      if (whenInUse.isPermanentlyDenied) {
+        _showSettingsDialog('Location');
+      }
+      return;
+    }
+
+    // Step 2: background location — required for 30-second background updates.
+    final always = await Permission.locationAlways.request();
     setState(() {
-      _microphoneGranted = !_microphoneGranted;
+      _locationGranted = always.isGranted;
     });
-    print('Microphone permission: $_microphoneGranted');
+
+    if (always.isPermanentlyDenied) {
+      _showSettingsDialog('Background Location');
+    }
   }
 
-  void _requestFlashlightPermission() {
+  Future<void> _requestNotificationPermission() async {
+    if (_notificationGranted) return;
+
+    final status = await Permission.notification.request();
     setState(() {
-      _flashlightGranted = !_flashlightGranted;
+      _notificationGranted = status.isGranted;
     });
-    print('Flashlight permission: $_flashlightGranted');
+
+    if (status.isPermanentlyDenied) {
+      _showSettingsDialog('Notification');
+    }
   }
 
+  Future<void> _requestMicrophonePermission() async {
+    if (_microphoneGranted) return;
+
+    final status = await Permission.microphone.request();
+    setState(() {
+      _microphoneGranted = status.isGranted;
+    });
+
+    if (status.isPermanentlyDenied) {
+      _showSettingsDialog('Microphone');
+    }
+  }
+
+  // FLASHLIGHT is a normal (install-time) permission on Android — no runtime
+  // dialog is possible. Tapping the card marks it confirmed.
+  Future<void> _requestFlashlightPermission() async {
+    setState(() {
+      _flashlightGranted = true;
+    });
+  }
+
+  // Show dialog to open app settings when a permission is permanently denied.
+  void _showSettingsDialog(String permissionName) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$permissionName Permission Required'),
+        content: Text(
+          '$permissionName permission was denied. Please enable it from app settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Continue is gated on background location and notifications — the two
+  // permissions required for core child safety functionality.
   bool get _allPermissionsGranted {
-    return _locationGranted &&
-        _notificationGranted &&
-        _microphoneGranted &&
-        _flashlightGranted;
+    return _locationGranted && _notificationGranted;
   }
 
   void _continue() {
     if (_allPermissionsGranted) {
-      print('All permissions granted! Navigate to child home...');
-
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -270,7 +347,7 @@ class ChildPermissionCard extends StatelessWidget {
   final bool isGranted;
   final bool isRequired;
   final Color color;
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
 
   const ChildPermissionCard({
     super.key,

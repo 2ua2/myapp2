@@ -28,7 +28,14 @@ class AuthProvider extends ChangeNotifier {
   void _init() {
     _authService.authStateChanges.listen((User? user) async {
       if (user != null) {
-        _currentUser = await _authService.getUserModel(user.uid);
+        // avoid overwriting currentUser already set by signIn or signUpParent
+        if (_currentUser == null) {
+          try {
+            _currentUser = await _authService.getUserModel(user.uid);
+          } catch (_) {
+            _currentUser = null;
+          }
+        }
       } else {
         _currentUser = null;
       }
@@ -57,10 +64,16 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
+      if (user == null) {
+        _setError('Sign up failed. Please try again.');
+        _setLoading(false);
+        return false;
+      }
       _currentUser = user;
       _setLoading(false);
       return true;
     } catch (e) {
+      _currentUser = null;
       _setError(e.toString().replaceAll('Exception: ', ''));
       _setLoading(false);
       return false;
@@ -104,6 +117,14 @@ class AuthProvider extends ChangeNotifier {
       _setError(e.toString().replaceAll('Exception: ', ''));
     }
     _setLoading(false);
+  }
+
+  // Clears the parent Firebase session on app launch without touching the
+  // child SharedPreferences session. Called from SplashScreen before routing.
+  Future<void> silentSignOut() async {
+    await _authService.silentSignOut();
+    _currentUser = null;
+    notifyListeners();
   }
 
   Future<bool> sendPasswordResetEmail(String email) async {

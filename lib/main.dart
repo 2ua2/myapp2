@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
 import 'screens/splash_screen.dart';
-import 'screens/parent/parent_home_screen.dart';
-import 'screens/child/child_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,32 +62,8 @@ class ChildSafetyTrackerApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          // Waiting for Firebase to restore persisted auth state
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-          // User is logged in — route by role fetched from Firestore
-          if (snapshot.hasData) {
-            return Consumer<AuthProvider>(
-              builder: (context, auth, _) {
-                if (auth.isParent) return const ParentHomeScreen();
-                if (auth.isChild) return const ChildHomeScreen();
-                // Auth confirmed but role not yet loaded from Firestore
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
-              },
-            );
-          }
-          // Not logged in
-          return const SplashScreen();
-        },
-      ),
+      // Always start from SplashScreen. Auth state is checked inside login screens.
+      home: const SplashScreen(),
     );
   }
 }

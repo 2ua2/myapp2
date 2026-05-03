@@ -1,6 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
+import '../../models/location_model.dart';
+import '../../providers/auth_provider.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
 import 'child_info_screen.dart';
@@ -14,7 +19,7 @@ class ParentHomeScreen extends StatefulWidget {
 
 class _ParentHomeScreenState extends State<ParentHomeScreen> {
   final TextEditingController _searchController = TextEditingController();
-  String _selectedChild = 'Ahmed';
+  String _selectedChild = '';
   bool _hasNotifications = true;
   bool _showSearchResults = false;
   final FocusNode _searchFocusNode = FocusNode();
@@ -25,6 +30,11 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   GoogleMapController? _mapController;
   MapType _currentMapType = MapType.normal;
   Set<Marker> _markers = {};
+
+  // Child tracking
+  StreamSubscription<DocumentSnapshot>? _locationSubscription;
+  LatLng? _childLocation;
+  String? _childId;
 
   static const CameraPosition _defaultPosition = CameraPosition(
     target: LatLng(33.3152, 44.3661),
@@ -39,10 +49,12 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         _showSearchResults = _searchController.text.isNotEmpty;
       });
     });
+    _initChildTracking();
   }
 
   @override
   void dispose() {
+    _locationSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _mapController?.dispose();
@@ -85,17 +97,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
       final latLng = LatLng(position.latitude, position.longitude);
 
-      setState(() {
-        _markers = {
-          Marker(
-            markerId: const MarkerId('current_location'),
-            position: latLng,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-            infoWindow: const InfoWindow(title: 'Your Location'),
-          ),
-        };
-      });
-
       await _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(target: latLng, zoom: 16),
@@ -112,22 +113,92 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     );
   }
 
+  Future<void> _initChildTracking() async {
+    try {
+      final familyId =
+          context.read<AuthProvider>().currentUser?.familyId;
+      if (familyId == null) return;
+
+      // TODO: move to ChildService later
+      final docs = await FirebaseFirestore.instance
+          .collection('families')
+          .doc(familyId)
+          .collection('children')
+          .limit(1)
+          .get();
+
+      if (docs.docs.isEmpty) return;
+
+      final childDoc = docs.docs.first;
+      setState(() {
+        _childId = childDoc.id;
+        _selectedChild = childDoc.data()['childName'] as String? ?? 'Child';
+      });
+
+      _startChildLocationStream(_childId!);
+    } catch (e) {
+      print('_initChildTracking error: $e');
+    }
+  }
+
+  void _startChildLocationStream(String childId) {
+    _locationSubscription = FirebaseFirestore.instance
+        .collection('locations')
+        .doc(childId)
+        .snapshots()
+        .listen((snapshot) {
+      try {
+        if (!snapshot.exists) return;
+
+        final location = LocationModel.fromMap(
+            snapshot.data() as Map<String, dynamic>);
+
+        final newLatLng = LatLng(location.latitude, location.longitude);
+
+        setState(() {
+          _childLocation = newLatLng;
+          _markers = {
+            Marker(
+              markerId: const MarkerId('child_location'),
+              position: newLatLng,
+              infoWindow: InfoWindow(title: _selectedChild),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueBlue),
+            ),
+          };
+        });
+
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(newLatLng, 16),
+        );
+      } catch (e) {
+        print('_startChildLocationStream listener error: $e');
+      }
+    });
+  }
+
   void _onLocatePressed() {
-    _goToCurrentLocation();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.my_location, color: Colors.white),
-            const SizedBox(width: 12),
-            Text('Locating $_selectedChild on map...'),
-          ],
+    if (_childLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.location_off, color: Colors.white),
+              const SizedBox(width: 12),
+              const Text('Child location not available yet'),
+            ],
+          ),
+          backgroundColor: const Color(0xFF2196F3),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: const Color(0xFF2196F3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
+      );
+      return;
+    }
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(_childLocation!, 16),
     );
   }
 

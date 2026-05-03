@@ -32,8 +32,6 @@ class AuthService {
       final user = credential.user;
       if (user == null) return null;
 
-      await user.updateDisplayName(name);
-
       final userModel = UserModel(
         uid: user.uid,
         name: name,
@@ -43,10 +41,14 @@ class AuthService {
         familyId: user.uid,
       );
 
+      // Write the Firestore document first so the authStateChanges listener
+      // can read it if it fires before updateDisplayName completes.
       await _firestore
           .collection('users')
           .doc(user.uid)
           .set(userModel.toMap());
+
+      await user.updateDisplayName(name);
 
       return userModel;
     } on FirebaseAuthException catch (e) {
@@ -61,21 +63,20 @@ class AuthService {
     required String email,
     required String password,
   }) async {
+    User? firebaseUser;
     try {
       final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
-      final user = credential.user;
-      if (user == null) return null;
-
-      return await getUserModel(user.uid);
+      firebaseUser = credential.user;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
-    } catch (e) {
-      throw Exception('Sign in failed. Please try again.');
     }
+    if (firebaseUser == null) return null;
+    // Firestore read is outside the Firebase Auth catch block so its
+    // exceptions propagate directly to the caller without being swallowed.
+    return await getUserModel(firebaseUser.uid);
   }
 
   // Sign out
@@ -85,6 +86,12 @@ class AuthService {
     } catch (e) {
       throw Exception('Sign out failed. Please try again.');
     }
+  }
+
+  // Clears the Firebase Auth session only. Does not touch SharedPreferences
+  // so any existing child session remains intact after this call.
+  Future<void> silentSignOut() async {
+    await _auth.signOut();
   }
 
   // Send password reset email
@@ -98,15 +105,12 @@ class AuthService {
     }
   }
 
-  // Get user model from Firestore
+  // Get user model from Firestore. Throws if the document is missing or
+  // if the read fails — callers are responsible for handling the exception.
   Future<UserModel?> getUserModel(String uid) async {
-    try {
-      final doc = await _firestore.collection('users').doc(uid).get();
-      if (!doc.exists) return null;
-      return UserModel.fromMap(doc.data()!);
-    } catch (e) {
-      return null;
-    }
+    final doc = await _firestore.collection('users').doc(uid).get();
+    if (!doc.exists) throw Exception('User document not found.');
+    return UserModel.fromMap(doc.data()!);
   }
 
   // Update FCM token in Firestore
@@ -331,8 +335,10 @@ class AuthService {
         return 'No account found with this email.';
       case 'wrong-password':
         return 'Incorrect password. Please try again.';
+      case 'invalid-credential':
+        return 'Incorrect email or password. Please try again.';
       case 'email-already-in-use':
-        return 'An account already exists with this email.';
+        return 'This email is linked to a pre-existing account';
       case 'invalid-email':
         return 'Please enter a valid email address.';
       case 'weak-password':

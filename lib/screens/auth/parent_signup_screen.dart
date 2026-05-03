@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../parent/parent_home_screen.dart';
+import 'parent_login_screen.dart';
 
 class ParentSignUpScreen extends StatefulWidget {
   const ParentSignUpScreen({super.key});
@@ -59,16 +60,53 @@ class _ParentSignUpScreenState extends State<ParentSignUpScreen> {
           MaterialPageRoute(builder: (_) => const ParentHomeScreen()),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(auth.errorMessage ?? 'Sign up failed. Please try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        final errorMsg = auth.errorMessage ?? 'Sign up failed. Please try again.';
+        if (errorMsg == 'This email is linked to a pre-existing account') {
+          _showEmailInUseDialog(email);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMsg),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // Show a dialog when signup fails because the email already has an account.
+  // Offers the user a direct path to the login screen with the email pre-filled.
+  void _showEmailInUseDialog(String email) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Account Already Exists'),
+        content: const Text(
+          'This email is already registered. Would you like to log in instead?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ParentLoginScreen(initialEmail: email),
+                ),
+              );
+            },
+            child: const Text('Log In'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
