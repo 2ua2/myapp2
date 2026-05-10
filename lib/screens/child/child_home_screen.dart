@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 class ChildHomeScreen extends StatefulWidget {
-  const ChildHomeScreen({super.key});
+  final String familyId;
+
+  const ChildHomeScreen({super.key, required this.familyId});
 
   @override
   State<ChildHomeScreen> createState() => _ChildHomeScreenState();

@@ -35,7 +35,7 @@ class AuthService {
       final userModel = UserModel(
         uid: user.uid,
         name: name,
-        email: email,
+        email: email.toLowerCase(),
         role: 'parent',
         createdAt: DateTime.now(),
         familyId: user.uid,
@@ -92,6 +92,44 @@ class AuthService {
   // so any existing child session remains intact after this call.
   Future<void> silentSignOut() async {
     await _auth.signOut();
+  }
+
+  // Signs the child device in anonymously so Firestore writes that require
+  // an authenticated uid (saveChildInfo) succeed. Returns the uid on success,
+  // null on any error.
+  Future<String?> signInChildAnonymously() async {
+    try {
+      final existing = FirebaseAuth.instance.currentUser;
+      if (existing != null) {
+        print('already signed in: ${existing.uid}');
+        return existing.uid;
+      }
+      final credential =
+          await FirebaseAuth.instance.signInAnonymously();
+      print('anonymous sign in success: ${credential.user?.uid}');
+      return credential.user?.uid;
+    } catch (e) {
+      print('signInChildAnonymously ERROR: $e');
+      return null;
+    }
+  }
+
+  // Real-time stream of all children under a parent's family.
+  // Each map includes 'id' (doc key) plus all stored fields.
+  Stream<List<Map<String, dynamic>>> childrenStream(String parentUid) {
+    return FirebaseFirestore.instance
+        .collection('families')
+        .doc(parentUid)
+        .collection('children')
+        .where('status', isEqualTo: 'linked')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => {'id': doc.id, ...doc.data()})
+            .toList())
+        .handleError((e) {
+      print('childrenStream ERROR: $e');
+      return <Map<String, dynamic>>[];
+    });
   }
 
   // Send password reset email
@@ -325,6 +363,190 @@ class AuthService {
       throw Exception(e.message ?? 'Verification failed. Please try again.');
     } catch (e) {
       rethrow;
+    }
+  }
+
+  // TODO Phase 6: listen to /link_requests where
+  // parentEmail == current parent email, status == pending
+  // show notification to parent with Approve/Deny options
+  // on Approve: set status='approved', generate 4-digit PIN,
+  // write pin + parentId + familyId to the request doc
+
+  // Look up a parent's uid (= familyId) by email. Returns null if not found or on error.
+  Future<String?> getParentFamilyIdByEmail(String email) async {
+    try {
+      final query = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.trim().toLowerCase())
+          .where('role', isEqualTo: 'parent')
+          .limit(1)
+          .get();
+      if (query.docs.isEmpty) return null;
+      return query.docs.first.id;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Returns true if an approved link_request exists for this familyId + pin.
+  // Pin comparison is done in Dart rather than in the Firestore query to avoid
+  // silent type-mismatch failures when the stored pin is a String.
+  Future<bool> verifyChildPin({
+    required String familyId,
+    required String pin,
+  }) async {
+    try {
+      print('verifyChildPin: familyId=$familyId pin=$pin');
+
+      final query = await _firestore
+          .collection('link_requests')
+          .where('familyId', isEqualTo: familyId)
+          .where('status', isEqualTo: 'approved')
+          .get();
+
+      print('verifyChildPin: found ${query.docs.length} approved requests');
+
+      for (final doc in query.docs) {
+        final data = doc.data();
+        print('verifyChildPin: checking doc=${doc.id} pin=${data['pin']} vs input=$pin');
+        if (data['pin']?.toString() == pin.trim()) {
+          print('verifyChildPin: PIN matched on doc=${doc.id}');
+          return true;
+        }
+      }
+
+      print('verifyChildPin: no match found');
+      return false;
+    } catch (e) {
+      print('verifyChildPin ERROR: $e');
+      return false;
+    }
+  }
+
+  // Writes child profile to /users/{uid} and /families/{familyId}/children/{uid},
+  // then stamps the approved link_request with the child's uid.
+  Future<bool> saveChildInfo({
+    required String familyId,
+    required String name,
+    required String age,
+    required String phone,
+  }) async {
+    if (familyId.isEmpty) {
+      print('saveChildInfo: familyId is empty');
+      return false;
+    }
+
+    final user = _auth.currentUser;
+    if (user == null) {
+      print('saveChildInfo: currentUser is null');
+      return false;
+    }
+    final uid = user.uid;
+    print('DIAG-9 saveChildInfo uid=$uid familyId=$familyId');
+
+    try {
+      await _firestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': name,
+        'role': 'child',
+        'familyId': familyId,
+        'phoneNumber': phone,
+        'age': int.tryParse(age) ?? 0,
+        'createdAt': Timestamp.now(),
+      });
+      print('DIAG-10 wrote /users/$uid');
+    } catch (e) {
+      print('saveChildInfo: users write failed: $e');
+      return false;
+    }
+
+    try {
+      await _firestore
+          .collection('families')
+          .doc(familyId)
+          .collection('children')
+          .doc(uid)
+          .set({
+        'childName': name,
+        'parentId': familyId,
+        'childId': uid,
+        'age': age,
+        'phone': phone,
+        'linkedAt': FieldValue.serverTimestamp(),
+        'status': 'linked',
+      }, SetOptions(merge: true));
+      print('DIAG-11 wrote /families/$familyId/children/$uid');
+    } catch (e) {
+      print('saveChildInfo: families write failed: $e');
+      return false;
+    }
+
+    // link_requests update is optional — failure does not block onboarding.
+    try {
+      final requestQuery = await _firestore
+          .collection('link_requests')
+          .where('familyId', isEqualTo: familyId)
+          .where('childId', isEqualTo: uid)
+          .limit(1)
+          .get();
+
+      if (requestQuery.docs.isNotEmpty) {
+        await requestQuery.docs.first.reference.update({
+          'age': age,
+          'phone': phone,
+        });
+      }
+    } catch (e) {
+      print('saveChildInfo: link_request update error: $e');
+    }
+
+    return true;
+  }
+
+  // Creates a pending link request in /link_requests for the parent to approve.
+  // Returns the requestId on success so the caller can stamp childId onto it.
+  // expiresAt enables a Firestore TTL policy to auto-delete abandoned requests
+  // (child scanned QR but never completed onboarding) after 24 hours.
+  Future<String?> createLinkRequest({
+    required String familyId,
+    required String childName,
+  }) async {
+    try {
+      final requestId = const Uuid().v4();
+      await _firestore.collection('link_requests').doc(requestId).set({
+        'requestId': requestId,
+        'childName': childName,
+        'familyId': familyId,
+        'status': 'pending',
+        'createdAt': Timestamp.now(),
+        'childId': '',
+        'expiresAt': Timestamp.fromDate(
+          DateTime.now().add(const Duration(hours: 24)),
+        ),
+      });
+      return requestId;
+    } catch (e) {
+      print('createLinkRequest ERROR: $e');
+      return null;
+    }
+  }
+
+  // Deletes all approved link_requests for a family once the child has
+  // finished onboarding. The permanent child record in families/children
+  // is not touched — only the temporary linking documents are removed.
+  Future<void> cleanupLinkRequests(String familyId) async {
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('link_requests')
+          .where('familyId', isEqualTo: familyId)
+          .where('status', isEqualTo: 'approved')
+          .get();
+      for (final doc in query.docs) {
+        await doc.reference.delete();
+        print('cleanupLinkRequests: deleted ${doc.id}');
+      }
+    } catch (e) {
+      print('cleanupLinkRequests ERROR: $e');
     }
   }
 

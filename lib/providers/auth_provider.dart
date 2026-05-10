@@ -92,10 +92,16 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
+      if (user == null) {
+        _setError('Sign in failed. Please try again.');
+        _setLoading(false);
+        return false;
+      }
       _currentUser = user;
       _setLoading(false);
       return true;
     } catch (e) {
+      _currentUser = null;
       _setError(e.toString().replaceAll('Exception: ', ''));
       _setLoading(false);
       return false;
@@ -125,6 +131,19 @@ class AuthProvider extends ChangeNotifier {
     await _authService.silentSignOut();
     _currentUser = null;
     notifyListeners();
+  }
+
+  // Re-fetches the current user's Firestore document and updates _currentUser.
+  // Call this after any field update so the UI reflects the latest data.
+  Future<void> refreshUser() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      _currentUser = await _authService.getUserModel(uid);
+      notifyListeners();
+    } catch (e) {
+      print('refreshUser error: $e');
+    }
   }
 
   Future<bool> sendPasswordResetEmail(String email) async {

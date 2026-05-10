@@ -1,4 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../providers/auth_provider.dart';
+import '../role_selection_screen.dart';
 
 class ParentProfileScreen extends StatefulWidget {
   const ParentProfileScreen({super.key});
@@ -11,9 +18,179 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
   bool _notificationsEnabled = true;
   bool _locationSharingEnabled = true;
   bool _darkModeEnabled = false;
+  String _locationText = 'Fetching...';
+  String? _phoneNumber;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLocation();
+    _loadPhoneNumber();
+  }
+
+  Future<void> _fetchLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        setState(() => _locationText = 'Permission denied');
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition();
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (!mounted) return;
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          setState(() => _locationText = '${p.locality}, ${p.country}');
+        } else {
+          setState(() =>
+              _locationText = '${position.latitude}, ${position.longitude}');
+        }
+      } catch (_) {
+        if (!mounted) return;
+        setState(() =>
+            _locationText = '${position.latitude}, ${position.longitude}');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _locationText = 'Location unavailable');
+    }
+  }
+
+  Future<void> _loadPhoneNumber() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _phoneNumber = prefs.getString('phone_number'));
+  }
+
+  Future<void> _showEditDialog(String fieldName, String currentValue) async {
+    await showDialog<void>(
+      context: context,
+      // controller is created inside the builder so its lifetime is bound to
+      // the dialog widget — this avoids disposing it while the TextField is
+      // still attached during the dismiss animation
+      builder: (dialogContext) {
+        final controller = TextEditingController(text: currentValue);
+        return AlertDialog(
+          title: Text('Edit $fieldName'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final newValue = controller.text.trim();
+                Navigator.pop(dialogContext);
+                _saveField(fieldName, newValue);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _saveField(String fieldName, String value) async {
+    // cache provider reference before any await to avoid context use in async gap
+    final auth = context.read<AuthProvider>();
+    final currentUser = auth.currentUser;
+    if (currentUser == null) return;
+
+    setState(() => _isSaving = true);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      switch (fieldName) {
+        case 'Name':
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .update({'name': value});
+          if (!mounted) return;
+          await auth.refreshUser();
+          break;
+        case 'Email':
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .update({'email': value});
+          if (!mounted) return;
+          await auth.refreshUser();
+          break;
+        case 'Phone Number':
+          // TODO: add phoneNumber to UserModel in Phase 9
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .update({'phoneNumber': value});
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('phone_number', value);
+          if (!mounted) return;
+          setState(() => _phoneNumber = value);
+          break;
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Updated successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentUser = context.watch<AuthProvider>().currentUser;
+
+    final String nameValue =
+        (currentUser?.name.isNotEmpty ?? false) ? currentUser!.name : 'Not set';
+    final bool nameWarning = currentUser == null || currentUser.name.isEmpty;
+
+    final String emailValue =
+        (currentUser?.email.isNotEmpty ?? false) ? currentUser!.email : 'Not set';
+    final bool emailWarning = currentUser == null || currentUser.email.isEmpty;
+
+    // TODO: add phoneNumber to UserModel in Phase 9
+    final String phoneValue =
+        (_phoneNumber != null && _phoneNumber!.isNotEmpty) ? _phoneNumber! : 'Not set';
+    final bool phoneWarning = _phoneNumber == null || _phoneNumber!.isEmpty;
+
+    final bool locationWarning = _locationText == 'Permission denied' ||
+        _locationText == 'Location unavailable';
+
+    final bool hasAnyWarning = phoneWarning || locationWarning;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -54,7 +231,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                     border: Border.all(color: Colors.white, width: 4),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF2196F3).withValues(alpha:0.3),
+                        color: const Color(0xFF2196F3).withValues(alpha: 0.3),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -99,7 +276,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha:0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -110,33 +287,72 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                 _buildInfoTile(
                   icon: Icons.person_outline,
                   title: 'Name',
-                  value: 'name',
-                  onTap: () => print('Edit name'),
+                  value: nameValue,
+                  isWarning: nameWarning,
+                  onTap: _isSaving
+                      ? () {}
+                      : () => _showEditDialog('Name', currentUser?.name ?? ''),
                 ),
                 _buildDivider(),
                 _buildInfoTile(
                   icon: Icons.email_outlined,
                   title: 'Email',
-                  value: 'email',
-                  onTap: () => print('Edit email'),
+                  value: emailValue,
+                  isWarning: emailWarning,
+                  onTap: _isSaving
+                      ? () {}
+                      : () =>
+                          _showEditDialog('Email', currentUser?.email ?? ''),
                 ),
                 _buildDivider(),
                 _buildInfoTile(
                   icon: Icons.phone_outlined,
                   title: 'Phone Number',
-                  value: 'xxxx-xxxx',
-                  onTap: () => print('Edit phone'),
+                  value: phoneValue,
+                  isWarning: phoneWarning,
+                  onTap: _isSaving
+                      ? () {}
+                      : () => _showEditDialog(
+                          'Phone Number', _phoneNumber ?? ''),
                 ),
                 _buildDivider(),
                 _buildInfoTile(
                   icon: Icons.location_on_outlined,
                   title: 'Location',
-                  value: 'Unknown',
+                  value: _locationText,
+                  isWarning: locationWarning,
                   onTap: () => print('Edit Location'),
                 ),
               ],
             ),
           ),
+
+          if (hasAnyWarning) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF3E0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFF9800)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFFFF9800), size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Some profile information is incomplete. Tap a field to update.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF757575),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           const SizedBox(height: 16),
 
@@ -149,7 +365,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha:0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -217,7 +433,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha:0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -263,7 +479,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFF44336).withValues(alpha:0.3),
+                    color: const Color(0xFFF44336).withValues(alpha: 0.3),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -322,6 +538,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
     required String title,
     required String value,
     required VoidCallback onTap,
+    bool isWarning = false,
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -329,7 +546,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withValues(alpha:0.1),
+          color: const Color(0xFF2196F3).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
@@ -341,15 +558,35 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
           color: Color(0xFF757575),
         ),
       ),
-      subtitle: Text(
-        value,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF212121),
-        ),
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: Color(0xFF9E9E9E)),
+      subtitle: isWarning
+          ? Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  size: 16,
+                  color: Color(0xFFFF9800),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFFF9800),
+                  ),
+                ),
+              ],
+            )
+          : Text(
+              value,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF212121),
+              ),
+            ),
+      trailing: const Icon(
+          Icons.arrow_forward_ios, size: 16, color: Color(0xFF9E9E9E)),
       onTap: onTap,
     );
   }
@@ -366,7 +603,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withValues(alpha:0.1),
+          color: const Color(0xFF2196F3).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
@@ -397,7 +634,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: const Color(0xFF2196F3).withValues(alpha:0.1),
+          color: const Color(0xFF2196F3).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: const Color(0xFF2196F3)),
@@ -410,7 +647,8 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
           color: Color(0xFF212121),
         ),
       ),
-      trailing: trailing ?? const Icon(Icons.arrow_forward_ios, size: 16, color: Color(0xFF9E9E9E)),
+      trailing: trailing ??
+          const Icon(Icons.arrow_forward_ios, size: 16, color: Color(0xFF9E9E9E)),
       onTap: onTap,
     );
   }
@@ -427,12 +665,12 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
   void _showEditProfileDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Edit Profile'),
         content: const Text('Profile editing feature coming soon!'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('OK'),
           ),
         ],
@@ -441,21 +679,35 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
   }
 
   void _showLogoutDialog() {
+    // use 'dialogContext' so the outer state 'context' remains accessible
+    // inside the async onPressed without being shadowed by the builder param
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-              print('User logged out');
+            onPressed: () async {
+              // cache provider reference before pop so the dialog context is
+              // not used after it has been removed from the tree
+              final auth = context.read<AuthProvider>();
+              Navigator.pop(dialogContext);
+              try {
+                await auth.signOut();
+                if (!mounted) return;
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                      builder: (_) => const RoleSelectionScreen()),
+                  (route) => false,
+                );
+              } catch (e) {
+                print('Logout error: $e');
+              }
             },
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFF44336),
@@ -470,7 +722,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
   void _showLanguageDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Select Language'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -479,7 +731,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
               title: const Text('English'),
               leading: const Icon(Icons.circle_outlined),
               onTap: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 print('Language: English');
               },
             ),
@@ -505,7 +757,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
         ],

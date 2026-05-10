@@ -3,7 +3,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'child_home_screen.dart';
 
 class ChildAuthorizationsScreen extends StatefulWidget {
-  const ChildAuthorizationsScreen({super.key});
+  final String familyId;
+
+  const ChildAuthorizationsScreen({super.key, required this.familyId});
 
   @override
   State<ChildAuthorizationsScreen> createState() => _ChildAuthorizationsScreenState();
@@ -133,13 +135,13 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => ChildHomeScreen(),
+          builder: (context) => ChildHomeScreen(familyId: widget.familyId),
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please grant all permissions to ensure your safety'),
+          content: Text('Please grant Location and Notification permissions to continue'),
           backgroundColor: Color(0xFFFF9800),
           behavior: SnackBarBehavior.floating,
           duration: Duration(seconds: 2),

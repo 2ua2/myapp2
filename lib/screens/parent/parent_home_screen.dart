@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
 import 'child_info_screen.dart';
+import '../../services/auth_service.dart';
 
 class ParentHomeScreen extends StatefulWidget {
   const ParentHomeScreen({super.key});
@@ -33,6 +34,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
   // Child tracking
   StreamSubscription<DocumentSnapshot>? _locationSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _childrenSub;
   LatLng? _childLocation;
   String? _childId;
 
@@ -54,6 +56,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
 
   @override
   void dispose() {
+    _childrenSub?.cancel();
     _locationSubscription?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -113,32 +116,39 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     );
   }
 
-  Future<void> _initChildTracking() async {
-    try {
-      final familyId =
-          context.read<AuthProvider>().currentUser?.familyId;
-      if (familyId == null) return;
+  void _initChildTracking() {
+    final familyId = context.read<AuthProvider>().currentUser?.familyId;
+    if (familyId == null) return;
 
-      // TODO: move to ChildService later
-      final docs = await FirebaseFirestore.instance
-          .collection('families')
-          .doc(familyId)
-          .collection('children')
-          .limit(1)
-          .get();
-
-      if (docs.docs.isEmpty) return;
-
-      final childDoc = docs.docs.first;
-      setState(() {
-        _childId = childDoc.id;
-        _selectedChild = childDoc.data()['childName'] as String? ?? 'Child';
-      });
-
-      _startChildLocationStream(_childId!);
-    } catch (e) {
-      print('_initChildTracking error: $e');
-    }
+    _childrenSub = AuthService().childrenStream(familyId).listen(
+      (children) {
+        if (!mounted) return;
+        if (children.isEmpty) {
+          // No linked child yet — reset tracking state so the map shows
+          // with no child marker and the child button does nothing.
+          setState(() {
+            _childId = null;
+            _selectedChild = '';
+          });
+          _locationSubscription?.cancel();
+          _locationSubscription = null;
+          return;
+        }
+        final first = children.first;
+        final newChildId = first['id'] as String?;
+        final newName = first['childName'] as String? ?? 'Child';
+        if (newChildId == null || newChildId == _childId) return;
+        setState(() {
+          _childId = newChildId;
+          _selectedChild = newName;
+        });
+        // Restart location stream for the new child.
+        _locationSubscription?.cancel();
+        _locationSubscription = null;
+        _startChildLocationStream(newChildId);
+      },
+      onError: (e) => print('_initChildTracking stream error: $e'),
+    );
   }
 
   void _startChildLocationStream(String childId) {
@@ -203,10 +213,27 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   }
 
   void _onChildPressed() {
+    if (_childId == null) {
+      // No linked child — open ChildInfoScreen in empty state so the parent
+      // can tap through to AddChildScreen from there.
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ChildInfoScreen(
+            childName: '',
+            childId: '',
+          ),
+        ),
+      );
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChildInfoScreen(childName: _selectedChild),
+        builder: (_) => ChildInfoScreen(
+          childName: _selectedChild,
+          childId: _childId!,
+        ),
       ),
     );
   }
@@ -423,6 +450,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                               ),
                             ),
                           ),
+
                         ],
                       ),
                     ),
