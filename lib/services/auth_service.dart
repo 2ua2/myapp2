@@ -444,22 +444,7 @@ class AuthService {
     final uid = user.uid;
     print('DIAG-9 saveChildInfo uid=$uid familyId=$familyId');
 
-    try {
-      await _firestore.collection('users').doc(uid).set({
-        'uid': uid,
-        'name': name,
-        'role': 'child',
-        'familyId': familyId,
-        'phoneNumber': phone,
-        'age': int.tryParse(age) ?? 0,
-        'createdAt': Timestamp.now(),
-      });
-      print('DIAG-10 wrote /users/$uid');
-    } catch (e) {
-      print('saveChildInfo: users write failed: $e');
-      return false;
-    }
-
+    // Critical write: flips status to 'linked'. Must succeed before returning true.
     try {
       await _firestore
           .collection('families')
@@ -479,6 +464,22 @@ class AuthService {
     } catch (e) {
       print('saveChildInfo: families write failed: $e');
       return false;
+    }
+
+    // Secondary write: metadata only. Failure does not block linking.
+    try {
+      await _firestore.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': name,
+        'role': 'child',
+        'familyId': familyId,
+        'phoneNumber': phone,
+        'age': int.tryParse(age) ?? 0,
+        'createdAt': Timestamp.now(),
+      });
+      print('DIAG-10 wrote /users/$uid');
+    } catch (e) {
+      print('saveChildInfo: users write failed (non-critical): $e');
     }
 
     // link_requests update is optional — failure does not block onboarding.
@@ -529,6 +530,93 @@ class AuthService {
       print('createLinkRequest ERROR: $e');
       return null;
     }
+  }
+
+  // Approves a pending link request. Before writing the new child record,
+  // deletes every existing doc in families/{familyId}/children so the
+  // subcollection always holds exactly one entry (the current child).
+  // Writes the new doc with status:'linked' so childrenStream picks it up
+  // immediately without waiting for the child to call saveChildInfo.
+  // Returns the 4-digit PIN that the parent must read aloud to the child.
+  // Throws a readable Exception on validation or critical-write failure.
+  Future<String> approveRequest({required String requestId}) async {
+    // Read the request doc to get authoritative field values.
+    final requestDoc = await _firestore
+        .collection('link_requests')
+        .doc(requestId)
+        .get();
+
+    if (!requestDoc.exists) {
+      throw Exception('Request not found.');
+    }
+
+    final data = requestDoc.data()!;
+    final childId = data['childId'] as String? ?? '';
+    final childName = data['childName'] as String? ?? '';
+    final familyId = data['familyId'] as String? ?? '';
+
+    print('approveRequest: childId=$childId childName=$childName familyId=$familyId');
+
+    if (childId.isEmpty || familyId.isEmpty) {
+      throw Exception('Cannot approve: child has not scanned QR yet.');
+    }
+
+    // Delete ALL existing children docs before writing the new one.
+    // Failure is non-blocking — log and continue so the new write still lands.
+    try {
+      final existing = await _firestore
+          .collection('families')
+          .doc(familyId)
+          .collection('children')
+          .get();
+      if (existing.docs.isNotEmpty) {
+        final batch = _firestore.batch();
+        for (final doc in existing.docs) {
+          print('[CLEANUP-DELETED] childId=${doc.id}');
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+      print('[CLEANUP-DONE] count=${existing.docs.length}');
+    } catch (e) {
+      print('[CLEANUP-FAILED] $e');
+    }
+
+    // Write the new child doc. status:'linked' is set here directly so
+    // childrenStream surfaces the child immediately on the parent side.
+    await _firestore
+        .collection('families')
+        .doc(familyId)
+        .collection('children')
+        .doc(childId)
+        .set({
+      'childName': childName,
+      'parentId': familyId,
+      'childId': childId,
+      'linkedAt': FieldValue.serverTimestamp(),
+      'status': 'linked',
+      'age': '',
+      'phone': '',
+    });
+    print('approveRequest: wrote families/$familyId/children/$childId status=linked');
+
+    // Generate 4-digit PIN and stamp the link_request as approved.
+    final pin = (Random.secure().nextInt(9000) + 1000).toString();
+    try {
+      await _firestore
+          .collection('link_requests')
+          .doc(requestId)
+          .update({
+        'status': 'approved',
+        'pin': pin,
+        'approvedAt': FieldValue.serverTimestamp(),
+      });
+      print('approveRequest: link_request=$requestId status=approved pin=$pin');
+    } catch (e) {
+      print('approveRequest: link_request update FAILED: $e');
+    }
+
+    return pin;
   }
 
   // Deletes all approved link_requests for a family once the child has

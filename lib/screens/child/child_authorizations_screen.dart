@@ -124,10 +124,11 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
     );
   }
 
-  // Continue is gated on background location and notifications — the two
-  // permissions required for core child safety functionality.
+  // Continue is gated on all four permissions matching the Required labels in the UI.
+  // _flashlightGranted is always true (install-time permission), so it never blocks.
   bool get _allPermissionsGranted {
-    return _locationGranted && _notificationGranted;
+    return _locationGranted && _notificationGranted
+        && _microphoneGranted && _flashlightGranted;
   }
 
   void _continue() {
@@ -165,6 +166,7 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32.0),
+          child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -212,8 +214,9 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
 
               const SizedBox(height: 40),
 
-              Expanded(
-                child: ListView(
+              ListView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   children: [
                     ChildPermissionCard(
                       icon: Icons.location_on,
@@ -261,7 +264,6 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
                       onTap: _requestFlashlightPermission,
                     ),
                   ],
-                ),
               ),
 
               const SizedBox(height: 24),
@@ -335,6 +337,7 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
 
               const SizedBox(height: 40),
             ],
+          ),
           ),
         ),
       ),

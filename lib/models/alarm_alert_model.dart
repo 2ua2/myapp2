@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class SosAlertModel {
+class AlarmAlertModel {
   final String alertId;
   final String childId;
   final String familyId;
@@ -9,11 +9,10 @@ class SosAlertModel {
   final double longitude;
   final DateTime timestamp;
   final bool isResolved;
-  // Reverse-geocoded address; null for legacy documents written before the
-  // SOS-body update added this field.
+  // Reverse-geocoded address; null for documents written before geocoding ran.
   final String? sosAddress;
 
-  SosAlertModel({
+  AlarmAlertModel({
     required this.alertId,
     required this.childId,
     required this.familyId,
@@ -39,7 +38,7 @@ class SosAlertModel {
     };
   }
 
-  factory SosAlertModel.fromMap(Map<String, dynamic> map) {
+  factory AlarmAlertModel.fromMap(Map<String, dynamic> map) {
     DateTime timestamp;
     final rawTs = map['timestamp'];
     if (rawTs is Timestamp) {
@@ -50,14 +49,14 @@ class SosAlertModel {
       timestamp = DateTime.now();
     }
 
-    return SosAlertModel(
+    return AlarmAlertModel(
       // alertId is the Firestore document key, not a stored field. Callers
       // should merge {'alertId': doc.id} into the map before calling fromMap().
       alertId: map['alertId'] as String? ?? '',
       childId: map['childId'] as String? ?? '',
       familyId: map['familyId'] as String? ?? '',
       childName: map['childName'] as String? ?? '',
-      // sendSosAlert() writes 'lat'/'lng'; fall back to those if the canonical
+      // sendAlarmAlert() writes 'lat'/'lng'; fall back to those if the canonical
       // 'latitude'/'longitude' keys are absent.
       latitude: (map['latitude'] as num?)?.toDouble() ??
           (map['lat'] as num?)?.toDouble() ?? 0.0,
@@ -69,10 +68,10 @@ class SosAlertModel {
     );
   }
 
-  factory SosAlertModel.fromFirestore(
+  factory AlarmAlertModel.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
     // Merge the document ID so fromMap() can populate alertId correctly.
     final map = <String, dynamic>{...doc.data()!, 'alertId': doc.id};
-    return SosAlertModel.fromMap(map);
+    return AlarmAlertModel.fromMap(map);
   }
 }

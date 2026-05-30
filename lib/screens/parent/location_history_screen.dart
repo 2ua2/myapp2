@@ -22,6 +22,10 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
   bool _isLoading = true;
   String? _childId;
   List<LocationModel> _locationHistory = [];
+  // Parallel list of Firestore doc IDs for each entry in _locationHistory.
+  // Used for deletes instead of item.locationId, which may be '' if the
+  // doc was written without a locationId field.
+  List<String> _locationDocIds = [];
 
   @override
   void initState() {
@@ -43,6 +47,7 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
           .collection('families')
           .doc(familyId)
           .collection('children')
+          .where('status', isEqualTo: 'linked')
           .limit(1)
           .get();
 
@@ -61,17 +66,20 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
           .limit(50)
           .get();
 
+      final docIds = historySnapshot.docs.map((doc) => doc.id).toList();
       final results = historySnapshot.docs
           .map((doc) => LocationModel.fromMap(doc.data()))
           .toList();
+      print('[LOC-HISTORY] loaded ${results.length} entries for childId=$_childId');
 
       if (!mounted) return;
       setState(() {
         _locationHistory = results;
+        _locationDocIds = docIds;
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading location history: $e');
+      print('[LOC-HISTORY] error loading history: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
     }
@@ -103,20 +111,26 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
               Navigator.pop(context);
               try {
                 // TODO: move to LocationService later
-                for (final item in _locationHistory) {
+                // Use _locationDocIds (Firestore doc IDs) rather than
+                // item.locationId, which may be '' for docs written
+                // without an explicit locationId field.
+                for (int i = 0; i < _locationDocIds.length; i++) {
                   await FirebaseFirestore.instance
                       .collection('locations')
                       .doc(_childId)
                       .collection('history')
-                      .doc(item.locationId)
+                      .doc(_locationDocIds[i])
                       .delete();
+                  if (!mounted) return;
                 }
+                print('[LOC-HISTORY] deleted ${_locationDocIds.length} docs for childId=$_childId');
               } catch (e) {
-                print('Error deleting location history: $e');
+                print('[LOC-HISTORY] error deleting history: $e');
               }
               if (!mounted) return;
               setState(() {
                 _locationHistory = [];
+                _locationDocIds = [];
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -196,8 +210,9 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
                   itemCount: _locationHistory.length,
                   itemBuilder: (context, index) {
                     final item = _locationHistory[index];
-                    final address =
+                    final coords =
                         '${item.latitude}, ${item.longitude}';
+                    final label = 'Location ${index + 1}';
                     final time = DateFormat('MMM d, y  h:mm a')
                         .format(item.timestamp);
                     return Container(
@@ -232,7 +247,7 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
                                   CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  address,
+                                  label,
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -241,7 +256,7 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  address,
+                                  coords,
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: Color(0xFF757575),

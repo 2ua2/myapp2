@@ -1,9 +1,9 @@
-import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 
 class AddChildScreen extends StatefulWidget {
   const AddChildScreen({super.key});
@@ -64,91 +64,22 @@ class _AddChildScreenState extends State<AddChildScreen> {
   }
 
   Future<void> _approveRequest(String requestId, String childName, String childId) async {
-    // Step 1: re-read request doc to get authoritative field values.
-    DocumentSnapshot requestDoc;
+    // Delegate all Firestore work (cleanup + child write + PIN) to AuthService.
+    String pin;
     try {
-      requestDoc = await FirebaseFirestore.instance
-          .collection('link_requests')
-          .doc(requestId)
-          .get();
+      pin = await AuthService().approveRequest(requestId: requestId);
     } catch (e) {
-      print('approveRequest: failed to read request doc: $e');
+      print('approveRequest: FAILED: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Failed to approve. Try again.'),
-        backgroundColor: Color(0xFFF44336),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceFirst('Exception: ', '')),
+        backgroundColor: const Color(0xFFF44336),
       ));
       return;
     }
 
-    if (!mounted) return;
-
-    if (!requestDoc.exists) {
-      print('approveRequest: request doc not found');
-      return;
-    }
-    final data = requestDoc.data()! as Map<String, dynamic>;
-    final resolvedChildId = data['childId'] as String? ?? '';
-    final resolvedChildName = data['childName'] as String? ?? '';
-    final resolvedFamilyId = data['familyId'] as String? ?? '';
-    print('approveRequest: childId=$resolvedChildId childName=$resolvedChildName familyId=$resolvedFamilyId');
-
-    // Step 2: validate required fields before writing.
-    if (resolvedChildId.isEmpty || resolvedFamilyId.isEmpty) {
-      print('approveRequest: missing childId or familyId — aborting');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Cannot approve: child has not scanned QR yet.'),
-        backgroundColor: Color(0xFFF44336),
-      ));
-      return;
-    }
-
-    // Step 3: write child record to families collection.
-    try {
-      await FirebaseFirestore.instance
-          .collection('families')
-          .doc(resolvedFamilyId)
-          .collection('children')
-          .doc(resolvedChildId)
-          .set({
-        'childName': resolvedChildName,
-        'parentId': resolvedFamilyId,
-        'childId': resolvedChildId,
-        'linkedAt': FieldValue.serverTimestamp(),
-        'status': 'approved',
-        'age': '',
-        'phone': '',
-      });
-      print('approveRequest: wrote to families/$resolvedFamilyId/children/$resolvedChildId');
-    } catch (e) {
-      print('approveRequest: families write FAILED: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Failed to approve. Try again.'),
-        backgroundColor: Color(0xFFF44336),
-      ));
-      return;
-    }
-
-    // Step 4: generate 4-digit PIN and update link_request.
-    final pin = (Random().nextInt(9000) + 1000).toString();
-    try {
-      await FirebaseFirestore.instance
-          .collection('link_requests')
-          .doc(requestId)
-          .update({
-        'status': 'approved',
-        'pin': pin,
-        'approvedAt': FieldValue.serverTimestamp(),
-      });
-      print('approveRequest: updated link_request status=approved pin=$pin');
-    } catch (e) {
-      print('approveRequest: link_request update FAILED: $e');
-    }
-
-    // Step 5: show PIN in a dialog the parent must manually dismiss so they
-    // have time to read it aloud to the child before it disappears.
+    // Show PIN in a dialog the parent must manually dismiss so they have
+    // time to read it aloud to the child before it disappears.
     if (!mounted) return;
     showDialog(
       context: context,

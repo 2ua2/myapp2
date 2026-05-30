@@ -46,9 +46,9 @@ class LocationModel {
     }
 
     return LocationModel(
-      locationId: map['locationId'] as String,
-      childId: map['childId'] as String,
-      familyId: map['familyId'] as String,
+      locationId: map['locationId'] as String? ?? '',
+      childId: map['childId'] as String? ?? '',
+      familyId: map['familyId'] as String? ?? '',
       latitude: (map['latitude'] as num).toDouble(),
       longitude: (map['longitude'] as num).toDouble(),
       timestamp: timestamp,

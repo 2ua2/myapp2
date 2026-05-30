@@ -1,4 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
+import '../../services/notification_service.dart';
+import '../../services/location_service.dart';
+import '../parent/message_screen.dart';
 
 class ChildHomeScreen extends StatefulWidget {
   final String familyId;
@@ -10,8 +17,98 @@ class ChildHomeScreen extends StatefulWidget {
 }
 
 class _ChildHomeScreenState extends State<ChildHomeScreen> {
-  String _parentName = 'parent';
-  bool _isConnected = true;
+  String _parentName = 'Parent';
+  String _parentPhone = '';
+  final String _parentRelation = 'Parent';
+  bool _isConnected = false;
+  // ignore: unused_field
+  bool _sosSending = false;
+  // ignore: unused_field
+  bool _alarmSending = false;
+  StreamSubscription<Position>? _locationSub;
+
+  @override
+  void initState() {
+    super.initState();
+    print('[CHILD-INIT] uid=${FirebaseAuth.instance.currentUser?.uid}');
+    _startLocationWriter();
+    _fetchParentInfo();
+  }
+
+  @override
+  void dispose() {
+    _locationSub?.cancel();
+    super.dispose();
+  }
+
+  // Reads the parent's name and phone from users/{familyId} and updates state.
+  // familyId == parentUid by convention (set during parent sign-up).
+  Future<void> _fetchParentInfo() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print('[CHILD-PARENT-INFO] currentUser is null, skipping fetch');
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.familyId)
+          .get();
+      if (!mounted) return;
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _parentName = data['name'] as String? ?? 'Parent';
+          // Parents do not have a phone field written during sign-up;
+          // fall back to empty so the caller can show 'Not available'.
+          _parentPhone = data['phoneNumber'] as String? ?? '';
+          _isConnected = true;
+        });
+        print('[CHILD-PARENT-INFO] name=$_parentName phone=$_parentPhone');
+      } else {
+        setState(() => _isConnected = false);
+        print('[CHILD-PARENT-INFO] parent doc not found for familyId=${widget.familyId}');
+      }
+    } catch (e) {
+      print('[CHILD-PARENT-INFO] error: $e');
+      if (!mounted) return;
+    }
+  }
+
+  // Starts a GPS position stream that writes each fix to /locations/{childId}/history.
+  // Uses the child's Firebase Auth uid so the parent can read from the correct path.
+  void _startLocationWriter() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final childId = user.uid;
+    final familyId = widget.familyId;
+    final locationService = LocationService();
+
+    _locationSub?.cancel();
+    _locationSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen(
+      (position) async {
+        try {
+          print('[CHILD-WRITE] path=locations/$childId/history lat=${position.latitude} lng=${position.longitude}');
+          await locationService.writeChildLocation(
+            childId,
+            familyId,
+            position.latitude,
+            position.longitude,
+          );
+          print('[CHILD-WRITE-OK] docId=n/a');
+        } catch (e) {
+          print('[CHILD-WRITE-ERR] $e');
+          print('_startLocationWriter write error: $e');
+        }
+      },
+      onError: (e) => print('_startLocationWriter stream error: $e'),
+    );
+  }
 
   void _onSOSPressed() {
     showDialog(
@@ -88,30 +185,72 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     );
   }
 
-  void _sendSOSAlert() {
+  Future<void> _sendSOSAlert() async {
+    setState(() => _sosSending = true);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Not logged in.'),
+          backgroundColor: Color(0xFFF44336),
+        ),
+      );
+      setState(() => _sosSending = false);
+      return;
+    }
+    final uid = user.uid;
+
+    Position? position;
+    try {
+      position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+    } catch (e) {
+      print('SOS location error: $e');
+    }
+    if (!mounted) return;
+
+    String childName = 'Child';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (!mounted) return;
+      childName = doc.data()?['name'] as String? ?? 'Child';
+    } catch (e) {
+      print('SOS get name error: $e');
+    }
+    if (!mounted) return;
+
+    print('[CHILD-SOS-PRESS] childUid=$uid familyId=${widget.familyId}');
+    final success = await NotificationService().sendSosAlert(
+      childId: uid,
+      familyId: widget.familyId,
+      lat: position?.latitude ?? 0.0,
+      lng: position?.longitude ?? 0.0,
+      childName: childName,
+    );
+    print('[CHILD-SOS-RESULT] ok=$success');
+    if (!mounted) return;
+    setState(() => _sosSending = false);
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'SOS alert sent to your parents!',
-                style: TextStyle(fontSize: 16),
-              ),
-            ),
-          ],
+        content: Text(
+          success
+              ? 'SOS sent to your parent!'
+              : 'Failed to send SOS. Try again.',
         ),
-        backgroundColor: const Color(0xFF4CAF50),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        duration: const Duration(seconds: 3),
+        backgroundColor: success
+            ? const Color(0xFF4CAF50)
+            : const Color(0xFFF44336),
       ),
     );
-    print('SOS Alert sent!');
   }
 
   void _onCallPressed() {
@@ -129,88 +268,94 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     );
   }
 
-  void _onAlarmPressed() {
-    print('Trigger alarm');
+  Future<void> _onAlarmPressed() async {
+    setState(() => _alarmSending = true);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Not logged in.'),
+          backgroundColor: Color(0xFFF44336),
+        ),
+      );
+      setState(() => _alarmSending = false);
+      return;
+    }
+    final uid = user.uid;
+
+    Position? position;
+    try {
+      position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+    } catch (e) {
+      print('Alarm location error: $e');
+    }
+    if (!mounted) return;
+
+    String childName = 'Child';
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (!mounted) return;
+      childName = doc.data()?['name'] as String? ?? 'Child';
+    } catch (e) {
+      print('Alarm get name error: $e');
+    }
+    if (!mounted) return;
+
+    print('[CHILD-ALARM-PRESS] childUid=$uid familyId=${widget.familyId}');
+    final success = await NotificationService().sendAlarmAlert(
+      childId: uid,
+      familyId: widget.familyId,
+      lat: position?.latitude ?? 0.0,
+      lng: position?.longitude ?? 0.0,
+      childName: childName,
+    );
+    print('[CHILD-ALARM-RESULT] ok=$success');
+    if (!mounted) return;
+    setState(() => _alarmSending = false);
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Alarm activated on parent\'s device'),
-        backgroundColor: const Color(0xFF2196F3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+        content: Text(
+          success
+              ? 'Alarm sent to your parent!'
+              : 'Failed to send alarm. Try again.',
         ),
-        duration: const Duration(seconds: 2),
+        backgroundColor: success
+            ? const Color(0xFF4CAF50)
+            : const Color(0xFFF44336),
       ),
     );
   }
 
   void _onMessagePressed() {
-    print('Send message');
-    _showMessageDialog();
-  }
-
-  void _showMessageDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not logged in.')),
+      );
+      return;
+    }
+    final childId = user.uid;
+    final chatId = '${widget.familyId}_$childId';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MessageScreen(
+          chatId: chatId,
+          senderId: childId,
+          recipientId: widget.familyId,
+          childName: _parentName,
+          senderRole: 'child',
         ),
-        title: const Text(
-          'Quick Message',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _QuickMessageButton(
-              message: 'I\'m okay',
-              icon: Icons.thumb_up,
-              onTap: () {
-                Navigator.pop(context);
-                _sendQuickMessage('I\'m okay');
-              },
-            ),
-            const SizedBox(height: 8),
-            _QuickMessageButton(
-              message: 'Pick me up please',
-              icon: Icons.directions_car,
-              onTap: () {
-                Navigator.pop(context);
-                _sendQuickMessage('Pick me up please');
-              },
-            ),
-            const SizedBox(height: 8),
-            _QuickMessageButton(
-              message: 'Call me',
-              icon: Icons.phone,
-              onTap: () {
-                Navigator.pop(context);
-                _sendQuickMessage('Call me');
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _sendQuickMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Message sent: "$message"'),
-        backgroundColor: const Color(0xFF2196F3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -220,7 +365,12 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const FamilyContactsScreen(),
+        builder: (context) => FamilyContactsScreen(
+          name: _parentName,
+          phone: _parentPhone.isEmpty ? 'Not available' : _parentPhone,
+          relation: _parentRelation,
+          isActive: _isConnected,
+        ),
       ),
     );
   }
@@ -564,64 +714,19 @@ class _ChildHomeScreenState extends State<ChildHomeScreen> {
   }
 }
 
-class _QuickMessageButton extends StatelessWidget {
-  final String message;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _QuickMessageButton({
-    required this.message,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFF2196F3).withValues(alpha:0.2),
-            width: 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: const Color(0xFF2196F3),
-              size: 24,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF212121),
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios,
-              size: 16,
-              color: Color(0xFF2196F3),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class FamilyContactsScreen extends StatelessWidget {
-  const FamilyContactsScreen({super.key});
+  final String name;
+  final String phone;
+  final String relation;
+  final bool isActive;
+
+  const FamilyContactsScreen({
+    super.key,
+    required this.name,
+    required this.phone,
+    required this.relation,
+    required this.isActive,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -648,12 +753,11 @@ class FamilyContactsScreen extends StatelessWidget {
           child: Column(
             children: [
               _FamilyContactCard(
-                name: 'parent',
-                phone: 'xxxx-xxxxx',
-                relation: 'null',
-                isActive: false,
+                name: name,
+                phone: phone,
+                relation: relation,
+                isActive: isActive,
               ),
-
             ],
           ),
         ),

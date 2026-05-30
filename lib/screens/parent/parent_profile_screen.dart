@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -66,9 +67,48 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
     }
   }
 
+  // Reads phone from Firestore as the source of truth, syncs to SharedPreferences,
+  // and falls back to SharedPreferences if the Firestore doc is missing the field
+  // or if the read fails (e.g. offline).
   Future<void> _loadPhoneNumber() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _phoneNumber = prefs.getString('phone_number'));
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final uid = user.uid;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      if (!mounted) return;
+
+      final firestorePhone = doc.data()?['phoneNumber'] as String?;
+
+      if (firestorePhone != null && firestorePhone.isNotEmpty) {
+        // Firestore has a value — treat it as source of truth and update local cache.
+        final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        await prefs.setString('phone_number', firestorePhone);
+        if (!mounted) return;
+        setState(() => _phoneNumber = firestorePhone);
+        print('[PROFILE] phone loaded from Firestore uid=$uid');
+      } else {
+        // No phone in Firestore yet — fall back to local SharedPreferences cache.
+        final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        setState(() => _phoneNumber = prefs.getString('phone_number'));
+        print('[PROFILE] phone not in Firestore, using SharedPreferences: $_phoneNumber');
+      }
+    } catch (e) {
+      print('[PROFILE] error loading phone: $e');
+      if (!mounted) return;
+      // Best-effort fallback to SharedPreferences when Firestore is unavailable.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!mounted) return;
+        setState(() => _phoneNumber = prefs.getString('phone_number'));
+      } catch (_) {}
+    }
   }
 
   Future<void> _showEditDialog(String fieldName, String currentValue) async {
@@ -136,7 +176,6 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
           await auth.refreshUser();
           break;
         case 'Phone Number':
-          // TODO: add phoneNumber to UserModel in Phase 9
           await FirebaseFirestore.instance
               .collection('users')
               .doc(currentUser.uid)
@@ -706,7 +745,7 @@ class _ParentProfileScreenState extends State<ParentProfileScreen> {
                   (route) => false,
                 );
               } catch (e) {
-                print('Logout error: $e');
+                print('[PROFILE] logout error: $e');
               }
             },
             style: TextButton.styleFrom(

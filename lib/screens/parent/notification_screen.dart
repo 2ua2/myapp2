@@ -1,7 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/notification_service.dart';
+import '../../models/notification_model.dart';
 
-class NotificationScreen extends StatelessWidget {
+class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
+
+  @override
+  State<NotificationScreen> createState() => _NotificationScreenState();
+}
+
+class _NotificationScreenState extends State<NotificationScreen> {
+  String? _uid;
+  final NotificationService _notifService = NotificationService();
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,27 +45,75 @@ class NotificationScreen extends StatelessWidget {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.done_all),
+            onPressed: () {
+              if (_uid != null) {
+                _notifService.markAllAsRead(_uid!);
+              }
+            },
+          ),
+        ],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.notifications_off_outlined,
-              size: 100,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'No notification',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
+      body: StreamBuilder<List<NotificationModel>>(
+        stream: _uid != null
+            ? _notifService.notificationsStream(_uid!)
+            : const Stream.empty(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final notifications = snapshot.data ?? [];
+          if (notifications.isEmpty) {
+            return const Center(
+              child: Text('No notifications yet'),
+            );
+          }
+          return ListView.builder(
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final notif = notifications[index];
+              return ListTile(
+                leading: Icon(
+                  notif.type == 'sos'
+                      ? Icons.warning_amber
+                      : notif.type == 'geofence'
+                          ? Icons.location_off
+                          : Icons.notifications,
+                  color: notif.type == 'sos'
+                      ? const Color(0xFFF44336)
+                      : notif.type == 'geofence'
+                          ? const Color(0xFFFF9800)
+                          : const Color(0xFF2196F3),
+                ),
+                title: Text(
+                  notif.title,
+                  style: TextStyle(
+                    fontWeight:
+                        notif.isRead ? FontWeight.normal : FontWeight.bold,
+                  ),
+                ),
+                subtitle: Text(notif.body),
+                trailing: notif.isRead
+                    ? null
+                    : Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF44336),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                onTap: () {
+                  if (_uid != null) {
+                    _notifService.markAsRead(_uid!, notif.id);
+                  }
+                },
+              );
+            },
+          );
+        },
       ),
     );
   }

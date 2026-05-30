@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
@@ -24,7 +25,6 @@ class ChildInfoScreen extends StatefulWidget {
 }
 
 class _ChildInfoScreenState extends State<ChildInfoScreen> {
-  bool _hasLinkedChild = false;
   bool _isLoading = true;
   String _childName = 'Child';
   String _familyId = '';
@@ -32,145 +32,137 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
   String _phoneNumber = 'N/A';
   String _currentLocation = 'Location unavailable';
 
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _childDocSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _childFallbackSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _locationSubscription;
+
   // True when a real childId was passed by the caller; false means no child linked.
   bool get _hasChild => widget.childId.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    print('ChildInfoScreen initState: childId="${widget.childId}" childName="${widget.childName}"');
     _checkLinkedChild();
   }
 
+  @override
+  void dispose() {
+    _childDocSubscription?.cancel();
+    _childFallbackSubscription?.cancel();
+    _locationSubscription?.cancel();
+    super.dispose();
+  }
+
   Future<void> _checkLinkedChild() async {
+    print('_checkLinkedChild: childId="${widget.childId}" familyId="$_familyId"');
     final auth = context.read<AuthProvider>();
     final familyId = auth.currentUser?.familyId;
 
     if (familyId == null || familyId.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _hasLinkedChild = false;
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
 
     _familyId = familyId;
 
     if (widget.childId.isNotEmpty) {
-      // childId was passed by the caller — load that child directly
-      // without an extra collection fetch.
-      await _loadChildData();
-      if (mounted) {
-        setState(() {
-          _hasLinkedChild = true;
-          _childName = widget.childName;
-          _isLoading = false;
-        });
-      }
-      return;
-    }
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('families')
-          .doc(familyId)
-          .collection('children')
-          .limit(1)
-          .get();
-
-      if (!mounted) return;
-
-      if (snapshot.docs.isEmpty) {
-        setState(() {
-          _hasLinkedChild = false;
-          _isLoading = false;
-        });
+      // Case 1: specific child — subscribe to the document for live updates.
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) {
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
 
-      final childDoc = snapshot.docs.first;
-      final data = childDoc.data();
-      final childName = data['childName'] as String? ?? 'Child';
-      final childId = childDoc.id;
-
-      String location = 'Location unavailable';
-      try {
-        final locSnapshot = await FirebaseFirestore.instance
-            .collection('locations')
-            .doc(childId)
-            .collection('history')
-            .orderBy('timestamp', descending: true)
-            .limit(1)
-            .get();
-
-        if (!mounted) return;
-
-        if (locSnapshot.docs.isNotEmpty) {
-          final locData = locSnapshot.docs.first.data();
-          final lat = locData['latitude'];
-          final lng = locData['longitude'];
-          if (lat != null && lng != null) {
-            location = '$lat, $lng';
-          }
-        }
-      } catch (_) {
-        // location stays as 'Location unavailable'
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _hasLinkedChild = true;
-        _childName = childName;
-        _age = data['age']?.toString() ?? 'N/A';
-        _phoneNumber = data['phone'] as String? ?? 'N/A';
-        _currentLocation = location;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _hasLinkedChild = false;
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Loads age and phone for a specific child by childId.
-  // Uses the parent's Firebase Auth uid as the family document key.
-  Future<void> _loadChildData() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance
+      print('_checkLinkedChild path: families/$uid/children/${widget.childId}');
+      _childDocSubscription = FirebaseFirestore.instance
           .collection('families')
           .doc(uid)
           .collection('children')
           .doc(widget.childId)
-          .get();
-      if (!mounted) return;
-      if (doc.exists) {
-        final data = doc.data()!;
-        final status = data['status'] as String? ?? '';
-        if (status != 'linked') {
-          // Child approved but hasn't completed their info screen yet.
+          .snapshots()
+          .listen(
+        (doc) {
+          if (!mounted) return;
+          final data = doc.data();
+          if (data == null) return;
+          print('child doc update: status=${data['status']} age=${data['age']} phone=${data['phone']}');
+          final status = data['status'] as String? ?? '';
           setState(() {
-            _age = 'Pending...';
-            _phoneNumber = 'Pending...';
+            _childName = widget.childName;
+            _isLoading = false;
+            if (status == 'linked') {
+              _age = data['age']?.toString() ?? 'N/A';
+              _phoneNumber = data['phone']?.toString()
+                  ?? data['phoneNumber']?.toString()
+                  ?? 'N/A';
+            } else {
+              _age = 'Pending...';
+              _phoneNumber = 'Pending...';
+            }
           });
-        } else {
-          setState(() {
-            _age = data['age']?.toString() ?? 'N/A';
-            _phoneNumber = data['phone']?.toString()
-                ?? data['phoneNumber']?.toString()
-                ?? 'N/A';
-          });
-        }
-      }
-    } catch (e) {
-      print('_loadChildData error: $e');
+        },
+        onError: (e) {
+          print('_checkLinkedChild doc stream error: $e');
+          if (mounted) setState(() => _isLoading = false);
+        },
+      );
+
+      _locationSubscription = FirebaseFirestore.instance
+          .collection('locations')
+          .doc(widget.childId)
+          .collection('history')
+          .orderBy('timestamp', descending: true)
+          .limit(1)
+          .snapshots()
+          .listen(
+        (snapshot) {
+          if (!mounted) return;
+          if (snapshot.docs.isEmpty) return;
+          final locData = snapshot.docs.first.data();
+          final lat = locData['latitude'];
+          final lng = locData['longitude'];
+          if (lat != null && lng != null) {
+            setState(() => _currentLocation = '$lat, $lng');
+          }
+        },
+        onError: (e) {
+          print('location stream error: $e');
+        },
+      );
+      return;
     }
+
+    // Case 2: fallback — subscribe to first linked child (status filter applied).
+    _childFallbackSubscription = FirebaseFirestore.instance
+        .collection('families')
+        .doc(familyId)
+        .collection('children')
+        .where('status', isEqualTo: 'linked')
+        .limit(1)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        if (!mounted) return;
+        if (snapshot.docs.isEmpty) {
+          setState(() => _isLoading = false);
+          return;
+        }
+        final data = snapshot.docs.first.data();
+        setState(() {
+          _childName = data['childName'] as String? ?? 'Child';
+          _age = data['age']?.toString() ?? 'N/A';
+          _phoneNumber = data['phone']?.toString()
+              ?? data['phoneNumber']?.toString()
+              ?? 'N/A';
+          _isLoading = false;
+        });
+      },
+      onError: (e) {
+        print('_checkLinkedChild fallback stream error: $e');
+        if (mounted) setState(() => _isLoading = false);
+      },
+    );
   }
 
   void _showQRCode() {
@@ -235,11 +227,18 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
   }
 
   void _onMessagePressed() {
+    final parentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    debugPrint('[CHAT-DIAG-CHILDINFO] parentUid=$parentUid widgetChildId=${widget.childId} chatId=${parentUid}_${widget.childId}');
+    if (parentUid.isEmpty || widget.childId.isEmpty) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MessageScreen(
           childName: _childName,
+          chatId: '${parentUid}_${widget.childId}',
+          senderId: parentUid,
+          recipientId: widget.childId,
+          senderRole: 'parent',
         ),
       ),
     );

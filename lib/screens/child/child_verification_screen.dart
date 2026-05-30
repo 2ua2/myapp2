@@ -43,7 +43,7 @@ class _ChildVerificationScreenState extends State<ChildVerificationScreen> {
       return;
     }
 
-    print('ChildVerificationScreen: familyId=${widget.familyId} pin=${_pinController.text.trim()}');
+    print('[CHILD-VERIFY] familyId=${widget.familyId} pin=${_pinController.text.trim()}');
 
     setState(() => _isLoading = true);
     final messenger = ScaffoldMessenger.of(context);

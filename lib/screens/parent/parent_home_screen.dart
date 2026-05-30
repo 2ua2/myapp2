@@ -1,15 +1,25 @@
 import 'dart:async';
+import 'dart:math' show min, max;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../models/location_model.dart';
+import '../../models/geofence_model.dart';
 import '../../providers/auth_provider.dart';
 import 'parent_profile_screen.dart';
 import 'notification_screen.dart';
 import 'child_info_screen.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/alarm_alert_model.dart';
+import '../../models/sos_alert_model.dart';
+import 'message_screen.dart';
 import '../../services/auth_service.dart';
+import '../../services/location_service.dart';
+import '../../services/notification_service.dart';
 
 class ParentHomeScreen extends StatefulWidget {
   const ParentHomeScreen({super.key});
@@ -32,11 +42,54 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   MapType _currentMapType = MapType.normal;
   Set<Marker> _markers = {};
 
+  // Tracking service instance
+  final LocationService _locationService = LocationService();
+
   // Child tracking
-  StreamSubscription<DocumentSnapshot>? _locationSubscription;
+  StreamSubscription<LocationModel?>? _locationSubscription;
   StreamSubscription<List<Map<String, dynamic>>>? _childrenSub;
+  StreamSubscription<Position>? _parentLocationSub;
+  StreamSubscription<List<GeofenceModel>>? _geofenceSub;
   LatLng? _childLocation;
+  LatLng? _parentLocation;
   String? _childId;
+
+  // Derived tracking state — kept in state for future UI wiring
+  Set<Polyline> _polylines = {};
+  Set<Circle> _circles = {};
+  double? _distanceToChild;
+  DateTime? _lastChildLocationUpdate;
+
+  // Locate button toggle: true = next tap focuses child, false = next tap focuses parent.
+  bool _focusOnChild = true;
+  // Whether the parent-to-child route polyline is currently shown.
+  bool _showRoute = true;
+  // Current state index for the layers button 4-state cycle (0–3).
+  int _layersState = 0;
+  // Whether geofence circles are currently rendered.
+  bool _showGeofences = true;
+  // Last emitted geofence list; used to rebuild circles when visibility toggles.
+  List<GeofenceModel> _lastGeofences = [];
+  // Geofence center label markers; merged into _markers on every overlay rebuild.
+  Set<Marker> _geofenceLabelMarkers = {};
+
+  // Guards initial camera animation so only the first GPS fix re-centers the map.
+  bool _initialCameraDone = false;
+
+  // SOS alert popup overlay state.
+  final NotificationService _notifService = NotificationService();
+  StreamSubscription<SosAlertModel?>? _sosAlertSub;
+  SosAlertModel? _activeSosAlert;
+  bool _sosPopupVisible = false;
+  // Persisted ID of the last alert shown — prevents re-display after dismiss.
+  String? _sosAlertId;
+
+  // Alarm alert popup overlay state.
+  StreamSubscription<AlarmAlertModel?>? _alarmAlertSub;
+  AlarmAlertModel? _activeAlarmAlert;
+  bool _alarmPopupVisible = false;
+  // Persisted ID of the last alarm shown — prevents re-display after dismiss.
+  String? _alarmAlertId;
 
   static const CameraPosition _defaultPosition = CameraPosition(
     target: LatLng(33.3152, 44.3661),
@@ -52,12 +105,22 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
       });
     });
     _initChildTracking();
+    _startParentLocationStream();
+    _startGeofenceStream();
+    // Load persisted last-seen SOS ID first so the stream handler can compare
+    // against it immediately on first emission.
+    _loadLastSeenSosIdAndStartStream();
+    _loadLastSeenAlarmIdAndStartStream();
   }
 
   @override
   void dispose() {
     _childrenSub?.cancel();
     _locationSubscription?.cancel();
+    _parentLocationSub?.cancel();
+    _geofenceSub?.cancel();
+    _sosAlertSub?.cancel();
+    _alarmAlertSub?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _mapController?.dispose();
@@ -98,7 +161,12 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         ),
       );
 
+      if (!mounted) return;
+      // If the position stream already centered the camera, skip.
+      if (_initialCameraDone) return;
+
       final latLng = LatLng(position.latitude, position.longitude);
+      _initialCameraDone = true;
 
       await _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
@@ -117,6 +185,10 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
   }
 
   void _initChildTracking() {
+    // Cancel any existing subscription before re-subscribing.
+    _childrenSub?.cancel();
+    _childrenSub = null;
+
     final familyId = context.read<AuthProvider>().currentUser?.familyId;
     if (familyId == null) return;
 
@@ -124,8 +196,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
       (children) {
         if (!mounted) return;
         if (children.isEmpty) {
-          // No linked child yet — reset tracking state so the map shows
-          // with no child marker and the child button does nothing.
           setState(() {
             _childId = null;
             _selectedChild = '';
@@ -136,86 +206,296 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         }
         final first = children.first;
         final newChildId = first['id'] as String?;
-        final newName = first['childName'] as String? ?? 'Child';
-        if (newChildId == null || newChildId == _childId) return;
+        final newName = first['childName'] as String? ?? '';
+        debugPrint('[CHAT-DIAG-STREAM] childrenStream doc.id=$newChildId childName=$newName fullDoc=$first');
+        print('[PARENT-LINKED] familyId=$familyId childId=$newChildId childName=$newName');
+        // Capture whether the child doc changed before updating state.
+        final childChanged = newChildId != _childId;
+        // Always refresh cached values on every emission.
         setState(() {
           _childId = newChildId;
           _selectedChild = newName;
         });
-        // Restart location stream for the new child.
-        _locationSubscription?.cancel();
-        _locationSubscription = null;
-        _startChildLocationStream(newChildId);
+        print('_initChildTracking updated: childId=$_childId name=$_selectedChild');
+        // Restart location stream only when the child doc id changes.
+        if (childChanged && newChildId != null) {
+          _locationSubscription?.cancel();
+          _locationSubscription = null;
+          _startChildLocationStream(newChildId);
+        }
       },
       onError: (e) => print('_initChildTracking stream error: $e'),
     );
   }
 
+  // Subscribes to the child's latest location from the history subcollection.
+  // Calls _updateMapOverlays on every new emission.
   void _startChildLocationStream(String childId) {
-    _locationSubscription = FirebaseFirestore.instance
-        .collection('locations')
-        .doc(childId)
-        .snapshots()
-        .listen((snapshot) {
-      try {
-        if (!snapshot.exists) return;
-
-        final location = LocationModel.fromMap(
-            snapshot.data() as Map<String, dynamic>);
-
-        final newLatLng = LatLng(location.latitude, location.longitude);
-
-        setState(() {
-          _childLocation = newLatLng;
-          _markers = {
-            Marker(
-              markerId: const MarkerId('child_location'),
-              position: newLatLng,
-              infoWindow: InfoWindow(title: _selectedChild),
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueBlue),
-            ),
-          };
-        });
-
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(newLatLng, 16),
-        );
-      } catch (e) {
-        print('_startChildLocationStream listener error: $e');
-      }
-    });
-  }
-
-  void _onLocatePressed() {
-    if (_childLocation == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.location_off, color: Colors.white),
-              const SizedBox(width: 12),
-              const Text('Child location not available yet'),
-            ],
-          ),
-          backgroundColor: const Color(0xFF2196F3),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(_childLocation!, 16),
+    _locationSubscription?.cancel();
+    _locationSubscription = _locationService.childLocationStream(childId).listen(
+      (location) {
+        if (!mounted) return;
+        print('[PARENT-LOC-EMIT] childId=$childId lat=${location?.latitude} lng=${location?.longitude} ts=${location?.timestamp}');
+        if (location == null) return;
+        _childLocation = LatLng(location.latitude, location.longitude);
+        _lastChildLocationUpdate = location.timestamp;
+        _updateMapOverlays();
+      },
+      onError: (e) {
+        print('[PARENT-LOC-ERR] $e');
+        print('_startChildLocationStream error: $e');
+      },
     );
   }
 
-  void _onChildPressed() {
-    if (_childId == null) {
-      // No linked child — open ChildInfoScreen in empty state so the parent
-      // can tap through to AddChildScreen from there.
+  // Subscribes to the device GPS stream and updates the parent marker live.
+  void _startParentLocationStream() {
+    _parentLocationSub?.cancel();
+    _parentLocationSub = _locationService.parentLocationStream().listen(
+      (position) {
+        if (!mounted) return;
+        _parentLocation = LatLng(position.latitude, position.longitude);
+        // Center the camera on the first GPS fix if _goToCurrentLocation()
+        // has not already done so (e.g. GPS was slow during map creation).
+        if (!_initialCameraDone) {
+          _initialCameraDone = true;
+          _mapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(_parentLocation!, 16),
+          );
+        }
+        _updateMapOverlays();
+      },
+      onError: (e) => print('_startParentLocationStream error: $e'),
+    );
+  }
+
+  // Subscribes to the family's geofence collection and rebuilds map circles.
+  void _startGeofenceStream() {
+    final familyId = context.read<AuthProvider>().currentUser?.familyId;
+    if (familyId == null) return;
+    _geofenceSub?.cancel();
+    _geofenceSub = _locationService.geofenceStream(familyId).listen(
+      (geofences) {
+        if (!mounted) return;
+        _lastGeofences = geofences;
+        final newLabels = _showGeofences
+            ? _buildGeofenceLabelMarkers(geofences)
+            : <Marker>{};
+        _geofenceLabelMarkers = newLabels;
+        setState(() {
+          _circles = _showGeofences ? _buildGeofenceCircles(geofences) : {};
+          // Remove stale geofence label markers, then add the fresh set.
+          // Parent and child markers (no 'geofence_label_' prefix) are untouched.
+          _markers = _markers
+              .where((m) => !m.markerId.value.startsWith('geofence_label_'))
+              .toSet()
+            ..addAll(newLabels);
+        });
+      },
+      onError: (e) => print('_startGeofenceStream error: $e'),
+    );
+  }
+
+  // Converts active geofence models into map Circle overlays.
+  Set<Circle> _buildGeofenceCircles(List<GeofenceModel> geofences) {
+    return geofences
+        .where((g) => g.isActive)
+        .map((g) => Circle(
+              circleId: CircleId(g.geofenceId),
+              center: LatLng(g.latitude, g.longitude),
+              radius: g.radius,
+              fillColor: Colors.green.withValues(alpha: 0.15),
+              strokeColor: Colors.green,
+              strokeWidth: 2,
+            ))
+        .toSet();
+  }
+
+  // Converts active geofence models into flat green label Markers at their centers.
+  Set<Marker> _buildGeofenceLabelMarkers(List<GeofenceModel> geofences) {
+    return geofences
+        .where((g) => g.isActive)
+        .map((g) => Marker(
+              markerId: MarkerId('geofence_label_${g.geofenceId}'),
+              position: LatLng(g.latitude, g.longitude),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueGreen),
+              infoWindow: InfoWindow(title: g.name),
+              anchor: const Offset(0.5, 0.5),
+              flat: true,
+              zIndexInt: 1,
+            ))
+        .toSet();
+  }
+
+  // Rebuilds markers, route polyline, and distance from current position state.
+  // Called whenever parent or child location changes.
+  void _updateMapOverlays() {
+    final newMarkers = <Marker>{};
+    final newPolylines = <Polyline>{};
+    double? newDistance;
+
+    if (_parentLocation != null) {
+      newMarkers.add(Marker(
+        markerId: const MarkerId('parent_location'),
+        position: _parentLocation!,
+        infoWindow: const InfoWindow(title: 'You'),
+        // Bug 4: hueAzure distinguishes parent from child (hueRed) while
+        // keeping the same defaultMarkerWithHue visual style.
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ));
+    }
+
+    if (_childLocation != null) {
+      final childName = _selectedChild.isNotEmpty ? _selectedChild : 'Child';
+
+      newMarkers.add(Marker(
+        markerId: const MarkerId('child_location'),
+        position: _childLocation!,
+        infoWindow: InfoWindow(title: childName),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ));
+
+    }
+
+    if (_parentLocation != null && _childLocation != null) {
+      if (_showRoute) {
+        newPolylines.add(Polyline(
+          polylineId: const PolylineId('parent_child_route'),
+          points: [_parentLocation!, _childLocation!],
+          color: const Color(0xFFFF9800),
+          width: 5,
+          geodesic: true,
+        ));
+      }
+      newDistance = _locationService.distanceBetween(
+        _parentLocation!,
+        _childLocation!,
+      );
+    }
+
+    setState(() {
+      // Merge geofence label markers so position updates never wipe them.
+      _markers = {...newMarkers, ..._geofenceLabelMarkers};
+      _polylines = newPolylines;
+      _distanceToChild = newDistance;
+    });
+
+    // Re-show the child name InfoWindow after every location update so it
+    // stays visible without requiring the user to tap the label marker.
+    if (_childLocation != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _mapController?.showMarkerInfoWindow(
+            const MarkerId('child_location'),
+          );
+        }
+      });
+    }
+  }
+
+  // Animates the camera to show both parent and child markers with padding.
+  void _showBothMarkers() {
+    if (_parentLocation == null || _childLocation == null) return;
+    final minLat = min(_parentLocation!.latitude, _childLocation!.latitude);
+    final maxLat = max(_parentLocation!.latitude, _childLocation!.latitude);
+    final minLng = min(_parentLocation!.longitude, _childLocation!.longitude);
+    final maxLng = max(_parentLocation!.longitude, _childLocation!.longitude);
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        ),
+        80.0,
+      ),
+    );
+  }
+
+  // Toggles camera focus between child and parent on each tap.
+  // Does nothing silently when the target location is not yet available.
+  void _onLocatePressed() {
+    if (_focusOnChild) {
+      if (_childLocation == null) return;
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(_childLocation!, 16),
+      );
+      setState(() => _focusOnChild = false);
+    } else {
+      if (_parentLocation == null) return;
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(_parentLocation!, 16),
+      );
+      setState(() => _focusOnChild = true);
+    }
+  }
+
+  Future<void> _onChildPressed() async {
+    // Stream has already delivered a child — use cached values immediately.
+    if (_childId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChildInfoScreen(
+            childName: _selectedChild,
+            childId: _childId!,
+          ),
+        ),
+      ).then((_) { if (mounted) _initChildTracking(); });
+      return;
+    }
+
+    // Stream hasn't emitted yet (race condition) — fetch once from Firestore.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('families')
+          .doc(user.uid)
+          .collection('children')
+          .where('status', isEqualTo: 'linked')
+          .limit(1)
+          .get();
+
+      if (!mounted) return;
+
+      if (snapshot.docs.isEmpty) {
+        // Truly no linked child — open empty state.
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ChildInfoScreen(
+              childName: '',
+              childId: '',
+            ),
+          ),
+        ).then((_) { if (mounted) _initChildTracking(); });
+        return;
+      }
+
+      final doc = snapshot.docs.first;
+      final childId = doc.id;
+      final childName = doc.data()['childName'] as String? ?? '';
+
+      // Cache fetched values so next tap skips the Firestore round-trip.
+      setState(() {
+        _childId = childId;
+        _selectedChild = childName;
+      });
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChildInfoScreen(
+            childName: childName,
+            childId: childId,
+          ),
+        ),
+      ).then((_) { if (mounted) _initChildTracking(); });
+    } catch (e) {
+      print('_onChildPressed fetch error: $e');
+      if (!mounted) return;
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -224,36 +504,55 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
             childId: '',
           ),
         ),
-      );
-      return;
+      ).then((_) { if (mounted) _initChildTracking(); });
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChildInfoScreen(
-          childName: _selectedChild,
-          childId: _childId!,
-        ),
-      ),
-    );
   }
 
+  // Short tap: toggles the parent-to-child route polyline on/off.
+  // _updateMapOverlays() reads _showRoute and rebuilds _polylines consistently,
+  // so there is no duplicated polyline construction here.
   void _onSetRoutePressed() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.directions, color: Colors.white),
-            const SizedBox(width: 12),
-            Text('Setting route to $_selectedChild...'),
-          ],
-        ),
-        backgroundColor: const Color(0xFF2196F3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    _showRoute = !_showRoute;
+    _updateMapOverlays();
+  }
+
+  // Cycles the map through 4 states: normal+geofences, satellite+geofences,
+  // terrain+geofences, normal+no-geofences, then back to state 0.
+  void _onLayersPressed() {
+    _layersState = (_layersState + 1) % 4;
+    MapType newMapType;
+    bool newShowGeofences;
+    switch (_layersState) {
+      case 1:
+        newMapType = MapType.satellite;
+        newShowGeofences = true;
+        break;
+      case 2:
+        newMapType = MapType.terrain;
+        newShowGeofences = true;
+        break;
+      case 3:
+        newMapType = MapType.normal;
+        newShowGeofences = false;
+        break;
+      default: // case 0
+        newMapType = MapType.normal;
+        newShowGeofences = true;
+    }
+    final newLabels = newShowGeofences
+        ? _buildGeofenceLabelMarkers(_lastGeofences)
+        : <Marker>{};
+    _geofenceLabelMarkers = newLabels;
+    setState(() {
+      _currentMapType = newMapType;
+      _showGeofences = newShowGeofences;
+      _circles = newShowGeofences ? _buildGeofenceCircles(_lastGeofences) : {};
+      // Remove stale geofence label markers, then add the fresh set.
+      _markers = _markers
+          .where((m) => !m.markerId.value.startsWith('geofence_label_'))
+          .toSet()
+        ..addAll(newLabels);
+    });
   }
 
   void _onNotificationPressed() {
@@ -284,6 +583,544 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     });
   }
 
+  // Reads the last-seen SOS alert ID from SharedPreferences, then subscribes
+  // to the real-time stream. Called once from initState.
+  Future<void> _loadLastSeenSosIdAndStartStream() async {
+    print('[PARENT-SOS-LOAD-CALLED]');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _sosAlertId = prefs.getString('last_seen_sos_id');
+    } catch (e) {
+      print('_loadLastSeenSosIdAndStartStream prefs read error: $e');
+    }
+    print('[PARENT-SOS-LASTSEEN] id=$_sosAlertId');
+    if (!mounted) return;
+    _startSosAlertStream();
+  }
+
+  // Subscribes to the latest active SOS alert for the current family.
+  void _startSosAlertStream() {
+    print('[PARENT-SOS-START-CALLED] familyId=${context.read<AuthProvider>().currentUser?.familyId}');
+    final familyId = context.read<AuthProvider>().currentUser?.familyId;
+    if (familyId == null) return;
+    print('[PARENT-SOS-START-SUBSCRIBING] familyId=$familyId');
+    _sosAlertSub?.cancel();
+    _sosAlertSub = _notifService.unresolvedSosStream(familyId).listen(
+      (alert) {
+        if (!mounted) return;
+        print('[PARENT-SOS-EMIT] alertId=${alert?.alertId} status=${alert == null ? "null" : (alert.alertId == _sosAlertId ? "existing" : "new")} cachedSosId=$_sosAlertId');
+        if (alert == null) {
+          setState(() {
+            _sosPopupVisible = false;
+            _activeSosAlert = null;
+          });
+          return;
+        }
+        // Only show the popup for alerts the parent has not yet seen.
+        if (alert.alertId != _sosAlertId) {
+          setState(() {
+            _activeSosAlert = alert;
+            _sosAlertId = alert.alertId;
+            _sosPopupVisible = true;
+          });
+        }
+      },
+      onError: (e) {
+        print('[PARENT-SOS-ERR] $e');
+        print('_startSosAlertStream error: $e');
+      },
+    );
+  }
+
+  // Marks the SOS alert resolved in Firestore and persists its ID so it is
+  // never re-shown after a hot-reload or app restart.
+  Future<void> _resolveAndPersistSosAlert(String alertId) async {
+    try {
+      await _notifService.markSosResolved(alertId);
+    } catch (e) {
+      print('_resolveAndPersistSosAlert markSosResolved error: $e');
+    }
+    if (!mounted) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_seen_sos_id', alertId);
+    } catch (e) {
+      print('_resolveAndPersistSosAlert prefs write error: $e');
+    }
+  }
+
+  // Respond: animate camera to SOS location, enable route polyline, hide popup.
+  void _onSosRespond() {
+    final alert = _activeSosAlert;
+    if (alert == null) return;
+    final sosLatLng = LatLng(alert.latitude, alert.longitude);
+    _mapController?.animateCamera(
+      CameraUpdate.newLatLngZoom(sosLatLng, 17),
+    );
+    setState(() {
+      _showRoute = true;
+      _sosPopupVisible = false;
+      if (_parentLocation != null) {
+        _polylines = {
+          Polyline(
+            polylineId: const PolylineId('parent_child_route'),
+            points: [_parentLocation!, sosLatLng],
+            color: const Color(0xFFFF9800),
+            width: 5,
+            geodesic: true,
+          ),
+        };
+      }
+    });
+    _resolveAndPersistSosAlert(alert.alertId);
+  }
+
+  // Dismiss: hide popup only — does not change camera or route.
+  void _onSosDismiss() {
+    final alert = _activeSosAlert;
+    if (alert == null) return;
+    setState(() => _sosPopupVisible = false);
+    _resolveAndPersistSosAlert(alert.alertId);
+  }
+
+  // Builds the full-screen SOS overlay: dimmed backdrop + animated popup card.
+  Widget _buildSosPopup() {
+    final alert = _activeSosAlert!;
+    final address =
+        (alert.sosAddress != null && alert.sosAddress!.isNotEmpty)
+            ? alert.sosAddress!
+            : 'Lat: ${alert.latitude.toStringAsFixed(5)}, '
+                'Lng: ${alert.longitude.toStringAsFixed(5)}';
+    final timeStr = DateFormat('HH:mm').format(alert.timestamp);
+    final dateStr = DateFormat('dd MMM yyyy').format(alert.timestamp);
+    final cardWidth = MediaQuery.of(context).size.width * 0.85;
+
+    return Positioned.fill(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.0, end: 0.4),
+        duration: const Duration(milliseconds: 250),
+        builder: (_, opacity, child) => ColoredBox(
+          color: Colors.black.withValues(alpha: opacity),
+          child: child,
+        ),
+        child: Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.8, end: 1.0),
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutBack,
+            builder: (_, scale, child) =>
+                Transform.scale(scale: scale, child: child),
+            child: _buildSosCard(alert, address, timeStr, dateStr, cardWidth),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Builds the white card widget shown inside the SOS overlay.
+  Widget _buildSosCard(
+    SosAlertModel alert,
+    String address,
+    String timeStr,
+    String dateStr,
+    double cardWidth,
+  ) {
+    return SizedBox(
+      width: cardWidth,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Red top accent — top corners clipped by parent ClipRRect.
+              Container(height: 6, color: const Color(0xFFE53935)),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFE53935),
+                      size: 64,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'YOUR CHILD IS IN DANGER!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE53935),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${alert.childName} needs help right now.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      address,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$timeStr - $dateStr',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.black45,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        OutlinedButton(
+                          onPressed: _onSosDismiss,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.black54,
+                            side: const BorderSide(color: Colors.black26),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('DISMISS'),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _onSosRespond,
+                          icon: const Icon(Icons.directions, size: 18),
+                          label: const Text('RESPOND'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE53935),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Reads the last-seen alarm alert ID from SharedPreferences, then subscribes
+  // to the real-time stream. Called once from initState.
+  Future<void> _loadLastSeenAlarmIdAndStartStream() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _alarmAlertId = prefs.getString('last_seen_alarm_id');
+    } catch (e) {
+      print('_loadLastSeenAlarmIdAndStartStream prefs read error: $e');
+    }
+    if (!mounted) return;
+    _startAlarmAlertStream();
+  }
+
+  // Subscribes to the latest active alarm alert for the current family.
+  void _startAlarmAlertStream() {
+    final familyId = context.read<AuthProvider>().currentUser?.familyId;
+    if (familyId == null) return;
+    _alarmAlertSub?.cancel();
+    _alarmAlertSub = _notifService.unresolvedAlarmStream(familyId).listen(
+      (alert) {
+        if (!mounted) return;
+        if (alert == null) {
+          setState(() {
+            _alarmPopupVisible = false;
+            _activeAlarmAlert = null;
+          });
+          return;
+        }
+        // Only show the popup for alerts the parent has not yet seen.
+        if (alert.alertId != _alarmAlertId) {
+          setState(() {
+            _activeAlarmAlert = alert;
+            _alarmAlertId = alert.alertId;
+            _alarmPopupVisible = true;
+          });
+        }
+      },
+      onError: (e) => print('_startAlarmAlertStream error: $e'),
+    );
+  }
+
+  // Marks the alarm alert resolved in Firestore and persists its ID so it is
+  // never re-shown after a hot-reload or app restart.
+  Future<void> _resolveAndPersistAlarmAlert(String alertId) async {
+    try {
+      await _notifService.markAlarmResolved(alertId);
+    } catch (e) {
+      print('_resolveAndPersistAlarmAlert markAlarmResolved error: $e');
+    }
+    if (!mounted) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_seen_alarm_id', alertId);
+    } catch (e) {
+      print('_resolveAndPersistAlarmAlert prefs write error: $e');
+    }
+  }
+
+  // Call back: placeholder — shows a SnackBar, does NOT close or resolve the alert.
+  void _onAlarmCallBack() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Call back not available yet.')),
+    );
+  }
+
+  // Send text: close popup, resolve alert, then navigate to MessageScreen.
+  void _onAlarmSendText() {
+    final alert = _activeAlarmAlert;
+    if (alert == null) return;
+    setState(() => _alarmPopupVisible = false);
+    _resolveAndPersistAlarmAlert(alert.alertId);
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final parentUid = user.uid;
+    debugPrint('[CHAT-DIAG-ALARM] parentUid=$parentUid alertChildId=${alert.childId} chatId=${parentUid}_${alert.childId}');
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MessageScreen(
+          chatId: '${parentUid}_${alert.childId}',
+          senderId: parentUid,
+          recipientId: alert.childId,
+          childName: alert.childName,
+          senderRole: 'parent',
+        ),
+      ),
+    );
+  }
+
+  // Dismiss: hide popup, resolve alert, persist ID.
+  void _onAlarmDismiss() {
+    final alert = _activeAlarmAlert;
+    if (alert == null) return;
+    setState(() => _alarmPopupVisible = false);
+    _resolveAndPersistAlarmAlert(alert.alertId);
+  }
+
+  // Builds the full-screen alarm overlay: dimmed backdrop + animated popup card.
+  Widget _buildAlarmPopup() {
+    final alert = _activeAlarmAlert!;
+    final address =
+        (alert.sosAddress != null && alert.sosAddress!.isNotEmpty)
+            ? alert.sosAddress!
+            : 'Lat: ${alert.latitude.toStringAsFixed(5)}, '
+                'Lng: ${alert.longitude.toStringAsFixed(5)}';
+    final timeStr = DateFormat('HH:mm').format(alert.timestamp);
+    final dateStr = DateFormat('dd MMM yyyy').format(alert.timestamp);
+    final cardWidth = MediaQuery.of(context).size.width * 0.85;
+
+    return Positioned.fill(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.0, end: 0.4),
+        duration: const Duration(milliseconds: 250),
+        builder: (_, opacity, child) => ColoredBox(
+          color: Colors.black.withValues(alpha: opacity),
+          child: child,
+        ),
+        child: Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.8, end: 1.0),
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutBack,
+            builder: (_, scale, child) =>
+                Transform.scale(scale: scale, child: child),
+            child: _buildAlarmCard(alert, address, timeStr, dateStr, cardWidth),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Builds the white card widget shown inside the alarm overlay.
+  Widget _buildAlarmCard(
+    AlarmAlertModel alert,
+    String address,
+    String timeStr,
+    String dateStr,
+    double cardWidth,
+  ) {
+    const accentColor = Color(0xFFFF9800);
+    return SizedBox(
+      width: cardWidth,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Orange/amber top accent — top corners clipped by parent ClipRRect.
+              Container(height: 6, color: accentColor),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Stack(
+                  children: [
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.notifications_active,
+                          color: accentColor,
+                          size: 64,
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'YOUR CHILD NEEDS YOU',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: accentColor,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${alert.childName} is trying to reach you.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          address,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black54,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '$timeStr - $dateStr',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.black45,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Disabled-looking but still tappable — placeholder action.
+                            Opacity(
+                              opacity: 0.45,
+                              child: OutlinedButton(
+                                onPressed: _onAlarmCallBack,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black54,
+                                  side: const BorderSide(color: Colors.black26),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: const Text('CALL BACK'),
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: _onAlarmSendText,
+                              icon: const Icon(Icons.message, size: 18),
+                              label: const Text('SEND TEXT'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: accentColor,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    // Close (X) button — top-right of card content area.
+                    Positioned(
+                      top: -12,
+                      right: -12,
+                      child: IconButton(
+                        onPressed: _onAlarmDismiss,
+                        icon: const Icon(Icons.close, size: 20),
+                        color: Colors.black45,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -308,6 +1145,8 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               zoomControlsEnabled: false,
               compassEnabled: true,
               markers: _markers,
+              polylines: _polylines,
+              circles: _circles,
             ),
 
             // Top Bar
@@ -496,11 +1335,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _showMapTypeDropdown = !_showMapTypeDropdown;
-                      });
-                    },
+                    onTap: _onLayersPressed,
                     child: Container(
                       width: 48,
                       height: 48,
@@ -597,17 +1432,25 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                       ),
                       _buildBottomNavItem(
                         icon: Icons.child_care,
-                        onTap: _onChildPressed,
+                        onTap: () { _onChildPressed(); },
                       ),
-                      _buildBottomNavItem(
-                        icon: Icons.directions,
-                        onTap: _onSetRoutePressed,
+                      GestureDetector(
+                        onLongPress: _showBothMarkers,
+                        child: _buildBottomNavItem(
+                          icon: Icons.directions,
+                          onTap: _onSetRoutePressed,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
             ),
+
+            // Alarm popup — rendered before SOS so SOS stacks on top when both are active.
+            if (_alarmPopupVisible && _activeAlarmAlert != null) _buildAlarmPopup(),
+            // SOS alert popup overlay — sits on top of all other map widgets.
+            if (_sosPopupVisible && _activeSosAlert != null) _buildSosPopup(),
           ],
         ),
       ),

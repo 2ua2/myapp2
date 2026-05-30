@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import '../../models/message_model.dart';
+import '../../services/messaging_service.dart';
 
 class MessageScreen extends StatefulWidget {
   final String childName;
   final String childProfilePic;
+  final String chatId;
+  final String senderId;
+  final String recipientId;
+  final String senderRole;
 
   const MessageScreen({
     super.key,
     this.childName = 'name',
     this.childProfilePic = '',
+    required this.chatId,
+    required this.senderId,
+    required this.recipientId,
+    required this.senderRole,
   });
 
   @override
@@ -16,6 +26,8 @@ class MessageScreen extends StatefulWidget {
 
 class _MessageScreenState extends State<MessageScreen> {
   final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final MessagingService _messagingService = MessagingService();
   bool _hasText = false;
 
   @override
@@ -31,7 +43,120 @@ class _MessageScreenState extends State<MessageScreen> {
   @override
   void dispose() {
     _messageController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  // Scrolls to the bottom after the current frame is drawn.
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _onSendPressed() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+    // Clear immediately so the UI feels responsive before the await.
+    _messageController.clear();
+    try {
+      await _messagingService.sendMessage(
+        chatId: widget.chatId,
+        senderId: widget.senderId,
+        senderRole: widget.senderRole,
+        recipientId: widget.recipientId,
+        text: text,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to send message')),
+      );
+    }
+  }
+
+  // The existing "Start messaging" placeholder — shown when the list is empty.
+  Widget _buildEmptyPlaceholder() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 80,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Start messaging',
+            style: TextStyle(
+              fontSize: 18,
+              color: Colors.grey[500],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMessageBubble(MessageModel message) {
+    final isSent = message.senderId == widget.senderId;
+    final h = message.timestamp.hour.toString().padLeft(2, '0');
+    final m = message.timestamp.minute.toString().padLeft(2, '0');
+    final timeLabel = '$h:$m';
+
+    return Align(
+      alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.7,
+        ),
+        decoration: BoxDecoration(
+          color: isSent
+              ? const Color(0xFF2196F3)
+              : const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isSent ? 16 : 4),
+            bottomRight: Radius.circular(isSent ? 4 : 16),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment:
+              isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              message.text,
+              style: TextStyle(
+                fontSize: 15,
+                color: isSent ? Colors.white : const Color(0xFF212121),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              timeLabel,
+              style: TextStyle(
+                fontSize: 11,
+                color: isSent
+                    ? Colors.white.withValues(alpha: 0.7)
+                    : Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -76,26 +201,47 @@ class _MessageScreenState extends State<MessageScreen> {
         children: [
           // Messages Area
           Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.chat_bubble_outline,
-                    size: 80,
-                    color: Colors.grey[300],
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Start messaging',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[500],
-                      fontWeight: FontWeight.w500,
+            child: StreamBuilder<List<MessageModel>>(
+              stream: _messagingService.messagesStream(widget.chatId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 80,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Could not load messages',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                  );
+                }
+                final messages = snapshot.data ?? [];
+                if (messages.isEmpty) {
+                  return _buildEmptyPlaceholder();
+                }
+                _scrollToBottom();
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  itemCount: messages.length,
+                  itemBuilder: (_, i) => _buildMessageBubble(messages[i]),
+                );
+              },
             ),
           ),
 
@@ -106,7 +252,7 @@ class _MessageScreenState extends State<MessageScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha:0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 8,
                   offset: const Offset(0, -2),
                 ),
@@ -120,7 +266,7 @@ class _MessageScreenState extends State<MessageScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF2196F3).withValues(alpha:0.1),
+                      color: const Color(0xFF2196F3).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(
@@ -173,7 +319,7 @@ class _MessageScreenState extends State<MessageScreen> {
                     decoration: BoxDecoration(
                       color: _hasText
                           ? const Color(0xFF2196F3)
-                          : const Color(0xFF2196F3).withValues(alpha:0.3),
+                          : const Color(0xFF2196F3).withValues(alpha: 0.3),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: IconButton(
@@ -182,12 +328,7 @@ class _MessageScreenState extends State<MessageScreen> {
                         color: Colors.white,
                         size: 22,
                       ),
-                      onPressed: _hasText
-                          ? () {
-                        print('Send: ${_messageController.text}');
-                        _messageController.clear();
-                      }
-                          : null,
+                      onPressed: _hasText ? () { _onSendPressed(); } : null,
                     ),
                   ),
                 ],
