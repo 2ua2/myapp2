@@ -55,6 +55,10 @@ class MessageModel {
 
   factory MessageModel.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
-    return MessageModel.fromMap(doc.data()!);
+    final data = doc.data();
+    if (data == null) {
+      throw StateError('MessageModel.fromFirestore: document ${doc.id} has no data');
+    }
+    return MessageModel.fromMap(data);
   }
 }

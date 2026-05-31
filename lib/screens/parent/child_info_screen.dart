@@ -228,7 +228,6 @@ class _ChildInfoScreenState extends State<ChildInfoScreen> {
 
   void _onMessagePressed() {
     final parentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    debugPrint('[CHAT-DIAG-CHILDINFO] parentUid=$parentUid widgetChildId=${widget.childId} chatId=${parentUid}_${widget.childId}');
     if (parentUid.isEmpty || widget.childId.isEmpty) return;
     Navigator.push(
       context,

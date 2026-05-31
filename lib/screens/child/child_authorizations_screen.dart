@@ -14,7 +14,6 @@ class ChildAuthorizationsScreen extends StatefulWidget {
 class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
   bool _locationGranted = false;
   bool _notificationGranted = false;
-  bool _microphoneGranted = false;
   bool _flashlightGranted = false;
 
   @override
@@ -28,13 +27,11 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
     // Location is considered granted only when background access is confirmed.
     final locationAlways = await Permission.locationAlways.isGranted;
     final notification = await Permission.notification.isGranted;
-    final microphone = await Permission.microphone.isGranted;
     // FLASHLIGHT is a normal (install-time) permission on Android — no runtime
     // dialog exists, so treat it as always available.
     setState(() {
       _locationGranted = locationAlways;
       _notificationGranted = notification;
-      _microphoneGranted = microphone;
       _flashlightGranted = true;
     });
   }
@@ -77,19 +74,6 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
     }
   }
 
-  Future<void> _requestMicrophonePermission() async {
-    if (_microphoneGranted) return;
-
-    final status = await Permission.microphone.request();
-    setState(() {
-      _microphoneGranted = status.isGranted;
-    });
-
-    if (status.isPermanentlyDenied) {
-      _showSettingsDialog('Microphone');
-    }
-  }
-
   // FLASHLIGHT is a normal (install-time) permission on Android — no runtime
   // dialog is possible. Tapping the card marks it confirmed.
   Future<void> _requestFlashlightPermission() async {
@@ -124,11 +108,10 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
     );
   }
 
-  // Continue is gated on all four permissions matching the Required labels in the UI.
-  // _flashlightGranted is always true (install-time permission), so it never blocks.
+  // Continue is gated on location and notification; flashlight is always true
+  // (install-time permission) so it never blocks in practice.
   bool get _allPermissionsGranted {
-    return _locationGranted && _notificationGranted
-        && _microphoneGranted && _flashlightGranted;
+    return _locationGranted && _notificationGranted && _flashlightGranted;
   }
 
   void _continue() {
@@ -238,18 +221,6 @@ class _ChildAuthorizationsScreenState extends State<ChildAuthorizationsScreen> {
                       isRequired: true,
                       color: const Color(0xFF4CAF50),
                       onTap: _requestNotificationPermission,
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    ChildPermissionCard(
-                      icon: Icons.mic,
-                      title: 'Microphone Access',
-                      description: 'Parents can hear surroundings in emergencies and trigger alert sounds',
-                      isGranted: _microphoneGranted,
-                      isRequired: true,
-                      color: const Color(0xFF4CAF50),
-                      onTap: _requestMicrophonePermission,
                     ),
 
                     const SizedBox(height: 16),

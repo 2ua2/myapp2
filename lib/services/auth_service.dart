@@ -349,7 +349,7 @@ class AuthService {
           .doc(familyId)
           .collection('children')
           .doc(childId)
-          .set({...child.toMap(), 'childName': childName});
+          .set({...child.toMap(), 'childName': childName, 'status': 'linked'});
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_role', 'child');

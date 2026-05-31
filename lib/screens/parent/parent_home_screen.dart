@@ -207,7 +207,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
         final first = children.first;
         final newChildId = first['id'] as String?;
         final newName = first['childName'] as String? ?? '';
-        debugPrint('[CHAT-DIAG-STREAM] childrenStream doc.id=$newChildId childName=$newName fullDoc=$first');
         print('[PARENT-LINKED] familyId=$familyId childId=$newChildId childName=$newName');
         // Capture whether the child doc changed before updating state.
         final childChanged = newChildId != _childId;
@@ -918,7 +917,6 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     final parentUid = user.uid;
-    debugPrint('[CHAT-DIAG-ALARM] parentUid=$parentUid alertChildId=${alert.childId} chatId=${parentUid}_${alert.childId}');
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1006,7 +1004,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
               // Orange/amber top accent — top corners clipped by parent ClipRRect.
               Container(height: 6, color: accentColor),
               Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(16),
                 child: Stack(
                   children: [
                     Column(
@@ -1018,7 +1016,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                           color: accentColor,
                           size: 64,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 8),
                         const Text(
                           'YOUR CHILD NEEDS YOU',
                           textAlign: TextAlign.center,
@@ -1029,7 +1027,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Text(
                           '${alert.childName} is trying to reach you.',
                           textAlign: TextAlign.center,
@@ -1039,7 +1037,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                             color: Colors.black87,
                           ),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                         Text(
                           address,
                           textAlign: TextAlign.center,
@@ -1048,7 +1046,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                             color: Colors.black54,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 4),
                         Text(
                           '$timeStr - $dateStr',
                           textAlign: TextAlign.center,
@@ -1057,7 +1055,7 @@ class _ParentHomeScreenState extends State<ParentHomeScreen> {
                             color: Colors.black45,
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [

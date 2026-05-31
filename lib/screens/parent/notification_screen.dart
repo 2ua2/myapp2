@@ -13,11 +13,16 @@ class NotificationScreen extends StatefulWidget {
 class _NotificationScreenState extends State<NotificationScreen> {
   String? _uid;
   final NotificationService _notifService = NotificationService();
+  // Stream is created once in initState so rebuilds do not open new subscriptions.
+  Stream<List<NotificationModel>>? _notifStream;
 
   @override
   void initState() {
     super.initState();
     _uid = FirebaseAuth.instance.currentUser?.uid;
+    if (_uid != null) {
+      _notifStream = _notifService.notificationsStream(_uid!);
+    }
   }
 
   @override
@@ -57,9 +62,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ],
       ),
       body: StreamBuilder<List<NotificationModel>>(
-        stream: _uid != null
-            ? _notifService.notificationsStream(_uid!)
-            : const Stream.empty(),
+        stream: _notifStream ?? const Stream.empty(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

@@ -97,18 +97,20 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
     }
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      // Use 'dialogContext' so the outer 'context' (screen) is not shadowed and
+      // remains accessible for ScaffoldMessenger after the dialog is dismissed.
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Clear History'),
         content: const Text(
             'Are you sure you want to clear all location history?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           TextButton(
             onPressed: () async {
-              Navigator.pop(context);
+              Navigator.pop(dialogContext);
               try {
                 // TODO: move to LocationService later
                 // Use _locationDocIds (Firestore doc IDs) rather than
@@ -132,6 +134,7 @@ class _LocationHistoryScreenState extends State<LocationHistoryScreen> {
                 _locationHistory = [];
                 _locationDocIds = [];
               });
+              // 'context' here is the screen's context, not the dismissed dialog's context.
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Location history cleared'),
